@@ -30,14 +30,16 @@ heapline-gate check --budgets budgets.csv --records records
 `budgets.csv`:
 
 ```
-# name,max_peak[,max_live]
-parser,64MiB
+name,max_peak,max_live
+parser,64MiB,
 server,512MiB,1MiB
 ```
 
-Sizes are bytes or use `B`, `KiB`, `MiB`, `GiB`, `TiB`. `max_live` is optional
-and limits the heap still in use at exit; it hints at a leak but proves
-nothing, since a program may keep data until it exits on purpose.
+The first line that is not a comment (`#`) is the header; `max_live` may be
+left out of it. Sizes are bytes or use `B`, `KiB`, `MiB`, `GiB`, `TiB`.
+`max_live` is optional and limits the heap still in use at exit; it hints at
+a leak but proves nothing, since a program may keep data until it exits on
+purpose.
 
 `run` preloads heapline into the command only, never into your shell, and
 writes `records/NAME.PID.csv`. If the command starts other programs they are
@@ -71,8 +73,8 @@ the same name in a baseline, which is a directory of records like the one
 `run` writes:
 
 ```
-# name,max_peak[,max_live]
-parser,+5%
+name,max_peak,max_live
+parser,+5%,
 server,512MiB,1MiB
 ```
 
