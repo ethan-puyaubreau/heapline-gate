@@ -1,10 +1,11 @@
 import os
+import re
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from heapline_gate.cli import parse_size, size
+from heapline_gate.cli import parse_size, read_budgets, size
 from helpers import run_main, write_record
 
 MIB = 2**20
@@ -223,6 +224,16 @@ class BaselineTest(TmpDirTestCase):
     def test_row_without_max_peak(self):
         write_record(self.records, "app.2.csv")
         self.assertEqual(self.check("name,max_peak\napp\n")[0], 2)
+
+
+class ReadmeTest(TmpDirTestCase):
+    def test_budget_examples_are_valid(self):
+        readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
+        examples = re.findall(r"```\n(name,max_peak.*?)```", readme, re.S)
+        self.assertEqual(len(examples), 2)
+        for text in examples:
+            with self.subTest(text=text):
+                self.assertTrue(read_budgets(self.budgets(text)))
 
 
 class RunTest(TmpDirTestCase):
