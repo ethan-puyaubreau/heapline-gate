@@ -44,6 +44,11 @@ writes `records/NAME.PID.csv`. If the command starts other programs they are
 preloaded too and each writes its own record; `check` takes the highest peak
 of all the records of a name. `check` reads only files named that way.
 
+`NAME` defaults to the file name of the command and may hold letters, digits,
+`_`, `.`, `+` and `-`. `run` refuses to start when the directory already holds
+records of that name: an old record would stand in for a run that writes
+none, and let it pass. To measure again, remove the directory or use another.
+
 | Exit code | Meaning |
 |---|---|
 | 0 | every budget is respected |
@@ -51,9 +56,12 @@ of all the records of a name. `check` reads only files named that way.
 | 2 | nothing could be checked: no valid record, a budget without a record or without a baseline, or a bad budget file |
 
 A gate that saw nothing never passes. Records that are skipped (unknown
-version, truncated) are named on stderr, as are records without a budget.
+version, truncated, a negative heap) are named on stderr, as are records
+without a budget.
 
-`run` returns the exit code of the command.
+`run` returns the exit code of the command, 128 + N when a signal N ended
+it, 127 when it cannot be started, and 2 when `run` itself refuses to start
+it (no library, a bad name, old records).
 
 ## Budgets relative to a baseline
 
