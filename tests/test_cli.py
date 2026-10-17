@@ -110,7 +110,12 @@ class CheckTest(TmpDirTestCase):
 
     def test_bad_budget_file(self):
         write_record(self.records, "app.100.csv")
-        for text in ("nom,max\napp,1\n", "name,max_peak\napp,lots\n"):
+        for text in (
+            "nom,max\napp,1\n",
+            "name,max_peak\napp,lots\n",
+            "name,max_peak\napp,1MiB\napp,2MiB\n",
+            "name,max_peak\n,1MiB\n",
+        ):
             with self.subTest(text=text):
                 self.assertEqual(self.check(text)[0], 2)
 

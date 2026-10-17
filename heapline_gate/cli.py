@@ -45,9 +45,14 @@ def read_budgets(path):
         raise ValueError("%s: the header must contain name and max_peak" % path)
     budgets = []
     for row in reader:
+        name = row["name"].strip()
+        if not name:
+            raise ValueError("%s: a row has no name" % path)
+        if name in (b[0] for b in budgets):
+            raise ValueError("%s: %s has two budgets" % (path, name))
         max_peak, percent = parse_peak(row["max_peak"] or "")
         live = (row.get("max_live") or "").strip()
-        budgets.append((row["name"].strip(), max_peak, percent, parse_size(live) if live else None))
+        budgets.append((name, max_peak, percent, parse_size(live) if live else None))
     return budgets
 
 
