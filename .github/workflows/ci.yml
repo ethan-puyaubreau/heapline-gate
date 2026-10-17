@@ -14,6 +14,37 @@ permissions:
   contents: read
 
 jobs:
+  python:
+    name: Python ${{ matrix.python }}, installed
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest Python that pyproject.toml accepts, and the newest.
+          - python: '3.8'
+            os: ubuntu-22.04
+          - python: '3.13'
+            os: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Test
+        run: python -m unittest discover -s tests -v
+
+      # From outside the source tree, so that the installed package is used.
+      - name: Install and run the command
+        run: |
+          python -m pip install .
+          cd "$RUNNER_TEMP"
+          heapline-gate --help
+          python -c "import heapline_gate.cli, sys; sys.exit(not heapline_gate.cli.__file__.startswith(sys.prefix))"
+
   test:
     name: Test against heapline ${{ matrix.heapline }}
     runs-on: ubuntu-24.04
