@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+from fractions import Fraction
 from pathlib import Path
 
 from .records import read_records
@@ -21,8 +22,21 @@ def parse_size(text):
     return int(float(m.group(1)) * UNITS[m.group(2) or "B"])
 
 
+def parse_peak(text):
+    """A size, or '+5%' over the baseline: returns (bytes, None) or (None, percent)."""
+    m = re.fullmatch(r"\s*\+(\d+(?:\.\d+)?)%\s*", text)
+    if m:
+        # Fraction keeps the limit exact: 1000 +12.5% is 1125, not 1124.
+        return None, Fraction(m.group(1))
+    return parse_size(text), None
+
+
 def read_budgets(path):
-    """Read name,max_peak[,max_live] rows; lines starting with # are comments."""
+    """Read name,max_peak[,max_live] rows; lines starting with # are comments.
+
+    Returns (name, max_peak bytes or None, percent over the baseline or None,
+    max_live bytes or None) tuples.
+    """
     with open(path, newline="", encoding="utf-8") as f:
         lines = [line for line in f if not line.lstrip().startswith("#")]
     reader = csv.DictReader(lines)
@@ -30,10 +44,9 @@ def read_budgets(path):
         raise ValueError("%s: the header must contain name and max_peak" % path)
     budgets = []
     for row in reader:
+        max_peak, percent = parse_peak(row["max_peak"] or "")
         live = (row.get("max_live") or "").strip()
-        budgets.append(
-            (row["name"].strip(), parse_size(row["max_peak"]), parse_size(live) if live else None)
-        )
+        budgets.append((row["name"].strip(), max_peak, percent, parse_size(live) if live else None))
     return budgets
 
 
@@ -47,21 +60,43 @@ def cmd_check(args):
     except (OSError, ValueError) as e:
         print("heapline-gate: %s" % e, file=sys.stderr)
         return 2
+    relative = [name for name, _, percent, _ in budgets if percent is not None]
+    if relative and not args.baseline:
+        print("heapline-gate: relative budgets need --baseline: %s" % ", ".join(relative), file=sys.stderr)
+        return 2
     records, errors = read_records(args.records)
     for e in errors:
         print("heapline-gate: skipped %s" % e, file=sys.stderr)
+    baseline = []
+    if args.baseline:
+        baseline, errors = read_records(args.baseline)
+        for e in errors:
+            print("heapline-gate: skipped baseline %s" % e, file=sys.stderr)
 
     # run writes NAME.PID.csv; anything else in the directory is not ours.
+    def records_of(name, among):
+        pattern = re.compile(re.escape(name) + r"\.\d+\.csv")
+        return [r for r in among if pattern.fullmatch(r.path.name)]
+
     claimed = set()
     failed = missing = False
-    for name, max_peak, max_live in budgets:
-        pattern = re.compile(re.escape(name) + r"\.\d+\.csv")
-        mine = [r for r in records if pattern.fullmatch(r.path.name)]
+    for name, max_peak, percent, max_live in budgets:
+        mine = records_of(name, records)
         claimed.update(r.path for r in mine)
         if not mine:
             print("%-30s NO RECORD" % name)
             missing = True
             continue
+        budget = ""
+        if percent is not None:
+            theirs = records_of(name, baseline)
+            if not theirs:
+                print("%-30s NO BASELINE" % name)
+                missing = True
+                continue
+            base_peak = max(r.peak_heap_bytes for r in theirs)
+            max_peak = int(base_peak * (100 + percent) / 100)
+            budget = " (+%g%% of %s)" % (percent, mib(base_peak))
         peak = max(r.peak_heap_bytes for r in mine)
         live = max(r.live_heap_at_exit_bytes for r in mine)
         over = []
@@ -69,7 +104,7 @@ def cmd_check(args):
             over.append("peak %s > %s" % (mib(peak), mib(max_peak)))
         if max_live is not None and live > max_live:
             over.append("live at exit %s > %s" % (mib(live), mib(max_live)))
-        print("%-30s peak %-12s budget %-12s %s" % (name, mib(peak), mib(max_peak), "FAIL: " + "; ".join(over) if over else "ok"))
+        print("%-30s peak %-12s budget %-12s %s" % (name, mib(peak), mib(max_peak) + budget, "FAIL: " + "; ".join(over) if over else "ok"))
         failed = failed or bool(over)
 
     unbudgeted = sorted(r.path.name for r in records if r.path not in claimed)
@@ -120,6 +155,7 @@ def main(argv=None):
     check = sub.add_parser("check", help="compare records with a budget file")
     check.add_argument("--budgets", required=True, help="CSV: name,max_peak[,max_live]")
     check.add_argument("--records", required=True, help="directory written by run")
+    check.add_argument("--baseline", help="directory of records that +N%% budgets are relative to")
     check.set_defaults(func=cmd_check)
 
     args = parser.parse_args(argv)

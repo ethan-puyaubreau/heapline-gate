@@ -111,6 +111,83 @@ class CheckTest(TmpDirTestCase):
                 self.assertEqual(self.check(text)[0], 2)
 
 
+class BaselineTest(TmpDirTestCase):
+    def setUp(self):
+        super().setUp()
+        self.base = self.dir / "base"
+        self.base.mkdir()
+
+    def check(self, budgets_text, *extra):
+        return run_main(
+            "check", "--budgets", self.budgets(budgets_text), "--records", str(self.records),
+            "--baseline", str(self.base), *extra,
+        )
+
+    def test_within_tolerance(self):
+        write_record(self.base, "app.1.csv", peak=10 * MIB)
+        write_record(self.records, "app.2.csv", peak=10 * MIB + MIB // 2)
+        code, out, _ = self.check("name,max_peak\napp,+5%\n")
+        self.assertEqual(code, 0, out)
+        self.assertIn("+5% of 10.0 MiB", out)
+
+    def test_over_tolerance(self):
+        write_record(self.base, "app.1.csv", peak=10 * MIB)
+        write_record(self.records, "app.2.csv", peak=10 * MIB + MIB // 2 + 1)
+        self.assertEqual(self.check("name,max_peak\napp,+5%\n")[0], 1)
+
+    def test_tolerance_is_exact_boundary(self):
+        write_record(self.base, "app.1.csv", peak=1000)
+        write_record(self.records, "app.2.csv", peak=1125)
+        code, out, _ = self.check("name,max_peak\napp,+12.5%\n")
+        self.assertEqual(code, 0)
+        self.assertIn("+12.5% of", out)
+        write_record(self.records, "app.3.csv", peak=1126)
+        self.assertEqual(self.check("name,max_peak\napp,+12.5%\n")[0], 1)
+
+    def test_highest_baseline_process_counts(self):
+        write_record(self.base, "app.1.csv", peak=1 * MIB)
+        write_record(self.base, "app.2.csv", peak=10 * MIB)
+        write_record(self.records, "app.3.csv", peak=10 * MIB)
+        self.assertEqual(self.check("name,max_peak\napp,+0%\n")[0], 0)
+
+    def test_name_missing_from_baseline_is_an_error(self):
+        write_record(self.records, "app.2.csv")
+        code, out, _ = self.check("name,max_peak\napp,+5%\n")
+        self.assertEqual(code, 2)
+        self.assertIn("NO BASELINE", out)
+
+    def test_relative_budget_needs_a_baseline(self):
+        write_record(self.records, "app.2.csv")
+        code, _, err = TmpDirTestCase.check(self, "name,max_peak\napp,+5%\n")
+        self.assertEqual(code, 2)
+        self.assertIn("--baseline", err)
+
+    def test_absolute_and_relative_together(self):
+        write_record(self.base, "a.1.csv", peak=10 * MIB)
+        write_record(self.records, "a.2.csv", peak=10 * MIB)
+        write_record(self.records, "b.3.csv", peak=30 * MIB)
+        code, out, _ = self.check("name,max_peak\na,+5%\nb,20MiB\n")
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"a .* ok")
+
+    def test_unreadable_baseline_record_is_reported(self):
+        write_record(self.base, "app.1.csv", magic="# heapline 2")
+        write_record(self.records, "app.2.csv")
+        code, _, err = self.check("name,max_peak\napp,+5%\n")
+        self.assertEqual(code, 2)
+        self.assertIn("baseline", err)
+
+    def test_bad_percentages(self):
+        write_record(self.records, "app.2.csv")
+        for text in ("+%", "+abc%", "-5%", "5%", "+5"):
+            with self.subTest(text=text):
+                self.assertEqual(self.check("name,max_peak\napp,%s\n" % text)[0], 2)
+
+    def test_row_without_max_peak(self):
+        write_record(self.records, "app.2.csv")
+        self.assertEqual(self.check("name,max_peak\napp\n")[0], 2)
+
+
 class RunTest(TmpDirTestCase):
     def test_missing_library(self):
         code, _, err = run_main("run", "--lib", str(self.dir / "nope.so"), "--records", str(self.records), "--", "true")
@@ -133,8 +210,9 @@ class RunTest(TmpDirTestCase):
         self.assertIn("cannot run", err)
 
 
+# Skipped only when HEAPLINE_LIB is unset: a wrong path must fail, not skip.
 @unittest.skipUnless(
-    sys.platform.startswith("linux") and os.path.isfile(os.environ.get("HEAPLINE_LIB", "")),
+    sys.platform.startswith("linux") and "HEAPLINE_LIB" in os.environ,
     "set HEAPLINE_LIB to a built libheapline.so (Linux only)",
 )
 class ContractTest(TmpDirTestCase):
