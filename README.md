@@ -10,10 +10,11 @@ version are refused. It does not change heapline.
 ## Install
 
 ```
-pipx install git+https://github.com/ethan-puyaubreau/heapline-gate
+pipx install git+https://github.com/ethan-puyaubreau/heapline-gate@v0.1.0
 ```
 
-or `pip install .` from a clone. heapline itself comes from its
+or `pip install .` from a clone. The tag fixes the version; without it you
+get the head of `main`. heapline itself comes from its
 [release page](https://github.com/ethan-puyaubreau/heapline/releases) or is
 built from source; heapline-gate needs only the path to `libheapline.so`.
 
@@ -121,7 +122,7 @@ jobs:
           sha256sum -c heapline-v*-linux-x86_64.tar.gz.sha256
           tar xzf heapline-v*-linux-x86_64.tar.gz
           echo "HEAPLINE_LIB=$(echo "$PWD"/heapline-v*-linux-x86_64/lib/libheapline.so)" >> "$GITHUB_ENV"
-          pipx install git+https://github.com/ethan-puyaubreau/heapline-gate
+          pipx install git+https://github.com/ethan-puyaubreau/heapline-gate@v0.1.0
 
       - name: Measure the target branch
         run: |
