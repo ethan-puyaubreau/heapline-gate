@@ -159,12 +159,16 @@ def cmd_run(args):
     if not re.fullmatch(r"[\w.+-]+", name):
         print("heapline-gate: bad name %r (use letters, digits, '_', '.', '+' or '-')" % name, file=sys.stderr)
         return 2
-    # heapline does not create the directory.
-    records.mkdir(parents=True, exist_ok=True)
     # check takes the highest peak of a name: an old record would stand in
     # for a run that writes none, a crash for instance, and let it pass.
     pattern = record_name(name)
-    old = sorted(p.name for p in records.iterdir() if pattern.fullmatch(p.name))
+    try:
+        # heapline does not create the directory.
+        records.mkdir(parents=True, exist_ok=True)
+        old = sorted(p.name for p in records.iterdir() if pattern.fullmatch(p.name))
+    except OSError as e:
+        print("heapline-gate: cannot use %s: %s" % (records, e), file=sys.stderr)
+        return 2
     if old:
         print(
             "heapline-gate: %s already holds records of %s (%s); remove them or use another --records directory"

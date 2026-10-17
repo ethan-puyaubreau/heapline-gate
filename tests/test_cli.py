@@ -264,6 +264,13 @@ class RunTest(TmpDirTestCase):
                 self.assertEqual(code, 2)
                 self.assertIn("bad name", err)
 
+    def test_records_path_is_a_file(self):
+        lib = self.dir / "lib.so"
+        lib.write_bytes(b"")
+        code, _, err = run_main("run", "--lib", str(lib), "--records", str(lib), "--name", "app", "--", "true")
+        self.assertEqual(code, 2)
+        self.assertIn("cannot use", err)
+
     def test_refuses_records_left_from_an_earlier_run(self):
         lib = self.dir / "lib.so"
         lib.write_bytes(b"")
