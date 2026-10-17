@@ -46,13 +46,14 @@ def read_record(path) -> Record:
         raise ValueError("values line does not have %d fields" % len(COLUMNS))
     row = dict(zip(COLUMNS, values))
     try:
-        return Record(
-            path,
-            int(row["peak_heap_bytes"]),
-            int(row["live_heap_at_exit_bytes"]),
-        )
+        peak = int(row["peak_heap_bytes"])
+        live = int(row["live_heap_at_exit_bytes"])
     except ValueError:
         raise ValueError("peak or live heap is not an integer") from None
+    # A negative heap would pass any budget.
+    if peak < 0 or live < 0:
+        raise ValueError("peak or live heap is negative")
+    return Record(path, peak, live)
 
 
 def read_records(directory) -> Tuple[List[Record], List[str]]:

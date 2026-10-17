@@ -59,6 +59,13 @@ class ReadRecordTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not an integer"):
             read_record(path)
 
+    def test_refuses_negative_heap(self):
+        for peak, live in ((-1, 10), (10, -1)):
+            with self.subTest(peak=peak, live=live):
+                path = write_record(self.dir, "a.1.csv", peak=peak, live=live)
+                with self.assertRaisesRegex(ValueError, "negative"):
+                    read_record(path)
+
     def test_directory_skips_bad_files_and_reports_them(self):
         write_record(self.dir, "good.1.csv")
         write_record(self.dir, "bad.2.csv", magic="# heapline 9")
