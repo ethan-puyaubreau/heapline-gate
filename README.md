@@ -156,3 +156,7 @@ well as on each change.
   a margin in the budget.
 - A process killed by a signal writes no record, so its budget reports
   `NO RECORD` (exit code 2), not a pass.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
