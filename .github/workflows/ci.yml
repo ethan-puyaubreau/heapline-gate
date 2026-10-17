@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  # heapline can change its format while this repository does not move.
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test against heapline ${{ matrix.heapline }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        heapline: [ release, main ]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download the latest release of heapline
+        if: matrix.heapline == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo ethan-puyaubreau/heapline --pattern '*-linux-x86_64.tar.gz*'
+          sha256sum -c heapline-v*-linux-x86_64.tar.gz.sha256
+          tar xzf heapline-v*-linux-x86_64.tar.gz
+          echo "HEAPLINE_LIB=$(echo "$PWD"/heapline-v*-linux-x86_64/lib/libheapline.so)" >> "$GITHUB_ENV"
+
+      # Catches a format change before heapline releases it.
+      - name: Checkout heapline main
+        if: matrix.heapline == 'main'
+        uses: actions/checkout@v4
+        with:
+          repository: ethan-puyaubreau/heapline
+          path: heapline-src
+
+      - name: Build heapline main
+        if: matrix.heapline == 'main'
+        run: |
+          cmake -S heapline-src -B heapline-src/build -DCMAKE_BUILD_TYPE=Release -DHEAPLINE_ENABLE_TESTS=OFF
+          cmake --build heapline-src/build --parallel --target heapline
+          echo "HEAPLINE_LIB=$PWD/heapline-src/build/libheapline.so" >> "$GITHUB_ENV"
+
+      # With HEAPLINE_LIB set, the contract tests run the real library.
+      - name: Test
+        run: python3 -m unittest discover -s tests -v
