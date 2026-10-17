@@ -61,8 +61,12 @@ def record_name(name):
     return re.compile(re.escape(name) + r"\.\d+\.csv")
 
 
-def mib(n):
-    return "%.1f MiB" % (n / 2**20)
+def size(n):
+    """1536 to '1.5 KiB': the largest unit that keeps the number at 1 or more."""
+    for unit in ("TiB", "GiB", "MiB", "KiB"):
+        if n >= UNITS[unit]:
+            return "%.1f %s" % (n / UNITS[unit], unit)
+    return "%d B" % n
 
 
 def cmd_check(args):
@@ -98,7 +102,7 @@ def cmd_check(args):
             print("%-30s NO RECORD" % name)
             missing = True
             continue
-        budget = ""
+        relative_to = ""
         if percent is not None:
             theirs = records_of(name, baseline)
             if not theirs:
@@ -107,15 +111,17 @@ def cmd_check(args):
                 continue
             base_peak = max(r.peak_heap_bytes for r in theirs)
             max_peak = int(base_peak * (100 + percent) / 100)
-            budget = " (+%g%% of %s)" % (percent, mib(base_peak))
+            relative_to = " (+%g%% of %s)" % (percent, size(base_peak))
         peak = max(r.peak_heap_bytes for r in mine)
         live = max(r.live_heap_at_exit_bytes for r in mine)
+        # The excess, not both sizes: rounded, they may read the same.
         over = []
         if peak > max_peak:
-            over.append("peak %s > %s" % (mib(peak), mib(max_peak)))
+            over.append("peak over by %s" % size(peak - max_peak))
         if max_live is not None and live > max_live:
-            over.append("live at exit %s > %s" % (mib(live), mib(max_live)))
-        print("%-30s peak %-12s budget %-12s %s" % (name, mib(peak), mib(max_peak) + budget, "FAIL: " + "; ".join(over) if over else "ok"))
+            over.append("live at exit over by %s" % size(live - max_live))
+        verdict = "FAIL: " + "; ".join(over) if over else "ok"
+        print("%-30s peak %-10s budget %-10s %s%s" % (name, size(peak), size(max_peak), verdict, relative_to))
         failed = failed or bool(over)
 
     unbudgeted = sorted(r.path.name for r in records if r.path not in claimed)

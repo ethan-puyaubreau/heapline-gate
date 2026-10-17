@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from heapline_gate.cli import parse_size
+from heapline_gate.cli import parse_size, size
 from helpers import run_main, write_record
 
 MIB = 2**20
@@ -15,6 +15,13 @@ class ParseSizeTest(unittest.TestCase):
         self.assertEqual(parse_size("1000"), 1000)
         self.assertEqual(parse_size("512MiB"), 512 * MIB)
         self.assertEqual(parse_size("1.5 GiB"), 3 * 2**29)
+
+    def test_size_picks_a_readable_unit(self):
+        self.assertEqual(size(0), "0 B")
+        self.assertEqual(size(1023), "1023 B")
+        self.assertEqual(size(1536), "1.5 KiB")
+        self.assertEqual(size(512 * MIB), "512.0 MiB")
+        self.assertEqual(size(3 * 2**30), "3.0 GiB")
 
     def test_rejects_garbage(self):
         for text in ("", "MiB", "12 MB", "-1", "1e3"):
@@ -142,7 +149,9 @@ class BaselineTest(TmpDirTestCase):
     def test_over_tolerance(self):
         write_record(self.base, "app.1.csv", peak=10 * MIB)
         write_record(self.records, "app.2.csv", peak=10 * MIB + MIB // 2 + 1)
-        self.assertEqual(self.check("name,max_peak\napp,+5%\n")[0], 1)
+        code, out, _ = self.check("name,max_peak\napp,+5%\n")
+        self.assertEqual(code, 1)
+        self.assertIn("peak over by 1 B", out)
 
     def test_tolerance_is_exact_boundary(self):
         write_record(self.base, "app.1.csv", peak=1000)
