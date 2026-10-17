@@ -121,18 +121,21 @@ def cmd_run(args):
     if not command:
         print("heapline-gate: no command given", file=sys.stderr)
         return 2
-    lib = Path(args.lib)
+    # Absolute, so that a program that changes directory still loads the
+    # library and writes its record where check looks.
+    lib = Path(args.lib).resolve()
+    records = Path(args.records).resolve()
     if not lib.is_file():
         print("heapline-gate: %s is not a file" % lib, file=sys.stderr)
         return 2
     name = args.name or os.path.basename(command[0])
     # heapline does not create the directory.
-    Path(args.records).mkdir(parents=True, exist_ok=True)
+    records.mkdir(parents=True, exist_ok=True)
 
     # Only the child sees these variables, never this process or its caller.
     env = dict(os.environ)
     env["LD_PRELOAD"] = ":".join([str(lib)] + ([env["LD_PRELOAD"]] if env.get("LD_PRELOAD") else []))
-    env["HEAPLINE_OUTPUT"] = str(Path(args.records) / (name + ".%p.csv"))
+    env["HEAPLINE_OUTPUT"] = str(records / (name + ".%p.csv"))
     try:
         rc = subprocess.run(command, env=env).returncode
     except OSError as e:

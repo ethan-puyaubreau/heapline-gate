@@ -201,6 +201,23 @@ class RunTest(TmpDirTestCase):
         self.assertEqual(code, 2)
         self.assertIn("no command", err)
 
+    def child_env(self, *options):
+        """Run a child that writes LD_PRELOAD and HEAPLINE_OUTPUT to a file."""
+        (self.dir / "lib.so").write_bytes(b"")
+        out = self.dir / "env.txt"
+        script = "import os, sys; open(sys.argv[1], 'w').write(os.environ['LD_PRELOAD'] + '\\n' + os.environ['HEAPLINE_OUTPUT'])"
+        code, _, err = run_main("run", *options, "--", sys.executable, "-c", script, str(out))
+        self.assertEqual(code, 0, err)
+        return out.read_text().splitlines()
+
+    def test_paths_given_to_the_child_are_absolute(self):
+        cwd = os.getcwd()
+        self.addCleanup(os.chdir, cwd)
+        os.chdir(str(self.dir))
+        preload, output = self.child_env("--lib", "lib.so", "--records", "rel", "--name", "app")
+        self.assertEqual(Path(preload), (self.dir / "lib.so").resolve())
+        self.assertEqual(Path(output), (self.dir / "rel").resolve() / "app.%p.csv")
+
     @unittest.skipUnless(sys.platform.startswith("linux"), "needs Linux")
     def test_unknown_command(self):
         lib = self.dir / "lib.so"
