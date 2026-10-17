@@ -227,6 +227,16 @@ class RunTest(TmpDirTestCase):
                 self.assertEqual(code, 2)
                 self.assertIn("bad name", err)
 
+    def test_refuses_records_left_from_an_earlier_run(self):
+        lib = self.dir / "lib.so"
+        lib.write_bytes(b"")
+        write_record(self.records, "app.100.csv")
+        write_record(self.records, "app.extra.101.csv")
+        code, _, err = run_main("run", "--lib", str(lib), "--records", str(self.records), "--name", "app", "--", "true")
+        self.assertEqual(code, 2)
+        self.assertIn("app.100.csv", err)
+        self.assertNotIn("app.extra", err)
+
     @unittest.skipUnless(sys.platform.startswith("linux"), "needs Linux")
     def test_unknown_command(self):
         lib = self.dir / "lib.so"

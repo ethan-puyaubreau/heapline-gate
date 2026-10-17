@@ -50,6 +50,11 @@ def read_budgets(path):
     return budgets
 
 
+def record_name(name):
+    """The file names run gives the records of NAME: NAME.PID.csv."""
+    return re.compile(re.escape(name) + r"\.\d+\.csv")
+
+
 def mib(n):
     return "%.1f MiB" % (n / 2**20)
 
@@ -73,9 +78,9 @@ def cmd_check(args):
         for e in errors:
             print("heapline-gate: skipped baseline %s" % e, file=sys.stderr)
 
-    # run writes NAME.PID.csv; anything else in the directory is not ours.
+    # Anything else in the directory is not ours.
     def records_of(name, among):
-        pattern = re.compile(re.escape(name) + r"\.\d+\.csv")
+        pattern = record_name(name)
         return [r for r in among if pattern.fullmatch(r.path.name)]
 
     claimed = set()
@@ -136,6 +141,17 @@ def cmd_run(args):
         return 2
     # heapline does not create the directory.
     records.mkdir(parents=True, exist_ok=True)
+    # check takes the highest peak of a name: an old record would stand in
+    # for a run that writes none, a crash for instance, and let it pass.
+    pattern = record_name(name)
+    old = sorted(p.name for p in records.iterdir() if pattern.fullmatch(p.name))
+    if old:
+        print(
+            "heapline-gate: %s already holds records of %s (%s); remove them or use another --records directory"
+            % (records, name, ", ".join(old)),
+            file=sys.stderr,
+        )
+        return 2
 
     # Only the child sees these variables, never this process or its caller.
     env = dict(os.environ)
