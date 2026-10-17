@@ -208,7 +208,3 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     return args.func(args)
-
-
-if __name__ == "__main__":
-    sys.exit(main())
