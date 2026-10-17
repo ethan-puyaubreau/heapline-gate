@@ -104,6 +104,22 @@ class CheckTest(TmpDirTestCase):
     def test_empty_directory_is_an_error(self):
         self.assertEqual(self.check("name,max_peak\napp,20MiB\n")[0], 2)
 
+    def test_records_must_be_a_directory(self):
+        for path in (self.dir / "absent", self.budgets("name,max_peak\napp,1MiB\n")):
+            with self.subTest(path=path):
+                code, _, err = run_main("check", "--budgets", self.budgets("name,max_peak\napp,1MiB\n"), "--records", str(path))
+                self.assertEqual(code, 2)
+                self.assertIn("is not a directory", err)
+
+    def test_baseline_must_be_a_directory(self):
+        write_record(self.records, "app.100.csv")
+        code, _, err = run_main(
+            "check", "--budgets", self.budgets("name,max_peak\napp,+5%\n"), "--records", str(self.records),
+            "--baseline", str(self.dir / "absent"),
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("is not a directory", err)
+
     def test_unreadable_record_does_not_count(self):
         write_record(self.records, "app.100.csv", magic="# heapline 2")
         code, _, err = self.check("name,max_peak\napp,20MiB\n")

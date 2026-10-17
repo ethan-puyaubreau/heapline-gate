@@ -83,6 +83,10 @@ def cmd_check(args):
     if relative and not args.baseline:
         print("heapline-gate: relative budgets need --baseline: %s" % ", ".join(relative), file=sys.stderr)
         return 2
+    for directory in (args.records, args.baseline):
+        if directory is not None and not Path(directory).is_dir():
+            print("heapline-gate: %s is not a directory" % directory, file=sys.stderr)
+            return 2
     records, errors = read_records(args.records)
     for e in errors:
         print("heapline-gate: skipped %s" % e, file=sys.stderr)
