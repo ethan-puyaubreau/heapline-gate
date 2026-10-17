@@ -218,6 +218,15 @@ class RunTest(TmpDirTestCase):
         self.assertEqual(Path(preload), (self.dir / "lib.so").resolve())
         self.assertEqual(Path(output), (self.dir / "rel").resolve() / "app.%p.csv")
 
+    def test_bad_names(self):
+        lib = self.dir / "lib.so"
+        lib.write_bytes(b"")
+        for name in ("suite/parser", "bench%p", "a b", "x\\y"):
+            with self.subTest(name=name):
+                code, _, err = run_main("run", "--lib", str(lib), "--records", str(self.records), "--name", name, "--", "true")
+                self.assertEqual(code, 2)
+                self.assertIn("bad name", err)
+
     @unittest.skipUnless(sys.platform.startswith("linux"), "needs Linux")
     def test_unknown_command(self):
         lib = self.dir / "lib.so"

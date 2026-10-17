@@ -129,6 +129,11 @@ def cmd_run(args):
         print("heapline-gate: %s is not a file" % lib, file=sys.stderr)
         return 2
     name = args.name or os.path.basename(command[0])
+    # heapline expands % sequences and does not create directories, so such
+    # a name would never give a record that check finds.
+    if not re.fullmatch(r"[\w.+-]+", name):
+        print("heapline-gate: bad name %r (use letters, digits, '_', '.', '+' or '-')" % name, file=sys.stderr)
+        return 2
     # heapline does not create the directory.
     records.mkdir(parents=True, exist_ok=True)
 
