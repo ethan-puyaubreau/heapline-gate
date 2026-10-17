@@ -37,7 +37,8 @@ def read_budgets(path):
     Returns (name, max_peak bytes or None, percent over the baseline or None,
     max_live bytes or None) tuples.
     """
-    with open(path, newline="", encoding="utf-8") as f:
+    # utf-8-sig: spreadsheets on Windows save a byte order mark.
+    with open(path, newline="", encoding="utf-8-sig") as f:
         lines = [line for line in f if not line.lstrip().startswith("#")]
     reader = csv.DictReader(lines)
     if not reader.fieldnames or not {"name", "max_peak"} <= set(reader.fieldnames):

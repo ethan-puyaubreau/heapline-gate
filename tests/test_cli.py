@@ -82,6 +82,10 @@ class CheckTest(TmpDirTestCase):
         write_record(self.records, "app.100.csv")
         self.assertEqual(self.check("# memory budgets\nname,max_peak\napp,20MiB\n")[0], 0)
 
+    def test_byte_order_mark_and_windows_line_ends(self):
+        write_record(self.records, "app.100.csv")
+        self.assertEqual(self.check("﻿name,max_peak\r\napp,20MiB\r\n")[0], 0)
+
     def test_budget_without_record_is_an_error_not_a_pass(self):
         write_record(self.records, "app.100.csv")
         code, out, _ = self.check("name,max_peak\napp,20MiB\nother,20MiB\n")
