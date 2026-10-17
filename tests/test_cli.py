@@ -266,6 +266,12 @@ class RunTest(TmpDirTestCase):
         self.assertEqual(Path(preload), (self.dir / "lib.so").resolve())
         self.assertEqual(Path(output), (self.dir / "rel").resolve() / "app.%p.csv")
 
+    def test_keeps_an_existing_preload_after_heapline(self):
+        os.environ["LD_PRELOAD"] = "/opt/other.so"
+        self.addCleanup(os.environ.pop, "LD_PRELOAD")
+        preload, _ = self.child_env("--lib", str(self.dir / "lib.so"), "--records", str(self.records), "--name", "app")
+        self.assertEqual(preload, "%s:/opt/other.so" % (self.dir / "lib.so").resolve())
+
     def test_bad_names(self):
         lib = self.dir / "lib.so"
         lib.write_bytes(b"")
