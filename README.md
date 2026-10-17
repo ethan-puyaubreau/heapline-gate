@@ -102,6 +102,9 @@ directory, since old records of a name still count.
 On a pull request, measure the target branch, then the change:
 
 ```yaml
+on:
+  pull_request:
+
 jobs:
   heap:
     runs-on: ubuntu-24.04
