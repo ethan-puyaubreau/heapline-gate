@@ -7,6 +7,16 @@ heapline-gate only reads the records heapline writes (format version 1) and
 has no dependency beyond the Python 3.8+ standard library. Records of any other
 version are refused. It does not change heapline.
 
+## Install
+
+```
+pipx install git+https://github.com/ethan-puyaubreau/heapline-gate
+```
+
+or `pip install .` from a clone. heapline itself comes from its
+[release page](https://github.com/ethan-puyaubreau/heapline/releases) or is
+built from source; heapline-gate needs only the path to `libheapline.so`.
+
 ## Use
 
 Run each program under heapline, then check the records against a budget file:
