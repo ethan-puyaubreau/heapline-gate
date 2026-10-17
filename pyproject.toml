@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "heapline-gate"
+version = "0.1.0"
+description = "Fail a build when a program's heap peak, measured by heapline, exceeds a budget."
+readme = "README.md"
+requires-python = ">=3.8"
+
+[project.scripts]
+heapline-gate = "heapline_gate.cli:main"
+
+[tool.setuptools]
+packages = ["heapline_gate"]
