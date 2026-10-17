@@ -19,7 +19,8 @@ def parse_size(text):
     m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(B|KiB|MiB|GiB|TiB)?\s*", text)
     if not m:
         raise ValueError("bad size %r (use bytes, KiB, MiB, GiB or TiB)" % text)
-    return int(float(m.group(1)) * UNITS[m.group(2) or "B"])
+    # Fraction, not float: exact, and no OverflowError on a huge number.
+    return int(Fraction(m.group(1)) * UNITS[m.group(2) or "B"])
 
 
 def parse_peak(text):

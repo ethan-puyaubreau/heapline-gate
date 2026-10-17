@@ -15,6 +15,8 @@ class ParseSizeTest(unittest.TestCase):
         self.assertEqual(parse_size("1000"), 1000)
         self.assertEqual(parse_size("512MiB"), 512 * MIB)
         self.assertEqual(parse_size("1.5 GiB"), 3 * 2**29)
+        self.assertEqual(parse_size("0.1KiB"), 102)
+        self.assertEqual(parse_size("1" + "0" * 400), 10**400)
 
     def test_size_picks_a_readable_unit(self):
         self.assertEqual(size(0), "0 B")
