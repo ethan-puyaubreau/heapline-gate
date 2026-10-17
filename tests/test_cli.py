@@ -309,12 +309,21 @@ class RunTest(TmpDirTestCase):
 class ContractTest(TmpDirTestCase):
     """Runs the real library and reads its real record: guards the format."""
 
-    def run_app(self):
+    def run_app(self, records="sub"):
         code, _, _ = run_main(
-            "run", "--lib", os.environ["HEAPLINE_LIB"], "--records", str(self.records / "sub"),
+            "run", "--lib", os.environ["HEAPLINE_LIB"], "--records", str(self.records / records),
             "--name", "alloc", "--", sys.executable, "-c", "x = bytes(20_000_000)",
         )
         self.assertEqual(code, 0)
+
+    def test_same_program_within_its_baseline(self):
+        self.run_app("base")
+        self.run_app()
+        code, out, err = run_main(
+            "check", "--budgets", self.budgets("name,max_peak\nalloc,+5%\n"), "--records", str(self.records / "sub"),
+            "--baseline", str(self.records / "base"),
+        )
+        self.assertEqual((code, err), (0, ""), out)
 
     def test_budget_exceeded(self):
         self.run_app()
