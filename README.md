@@ -41,6 +41,13 @@ left out of it. Sizes are bytes or use `B`, `KiB`, `MiB`, `GiB`, `TiB`.
 a leak but proves nothing, since a program may keep data until it exits on
 purpose.
 
+`check` prints one line per budget:
+
+```
+parser                         peak 41.7 MiB   budget 64.0 MiB   ok
+server                         peak 318.2 MiB  budget 512.0 MiB  FAIL: live at exit over by 2.4 MiB
+```
+
 `run` preloads heapline into the command only, never into your shell, and
 writes `records/NAME.PID.csv`. If the command starts other programs they are
 preloaded too and each writes its own record; `check` takes the highest peak
