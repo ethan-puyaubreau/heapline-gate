@@ -122,6 +122,7 @@ class CheckTest(TmpDirTestCase):
             "name,max_peak\napp,lots\n",
             "name,max_peak\napp,1MiB\napp,2MiB\n",
             "name,max_peak\n,1MiB\n",
+            "name,max_peak\n",
         ):
             with self.subTest(text=text):
                 self.assertEqual(self.check(text)[0], 2)

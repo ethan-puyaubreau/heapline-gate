@@ -53,6 +53,9 @@ def read_budgets(path):
         max_peak, percent = parse_peak(row["max_peak"] or "")
         live = (row.get("max_live") or "").strip()
         budgets.append((name, max_peak, percent, parse_size(live) if live else None))
+    # With no budget, every record would go unchecked and the gate pass.
+    if not budgets:
+        raise ValueError("%s: no budget" % path)
     return budgets
 
 
