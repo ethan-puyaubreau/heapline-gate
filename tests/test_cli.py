@@ -413,20 +413,18 @@ class FindLibTest(TmpDirTestCase):
         self.assertEqual(run.call_args[1]["env"]["LD_PRELOAD"], "libheapline.so")
 
 
-# Skipped only when HEAPLINE_LIB is unset: a wrong path must fail, not skip.
-@unittest.skipUnless(
-    sys.platform.startswith("linux") and "HEAPLINE_LIB" in os.environ,
-    "set HEAPLINE_LIB to a built libheapline.so (Linux only)",
-)
-class ContractTest(TmpDirTestCase):
+class ContractTests:
     """Runs the real library and reads its real record: guards the format."""
 
+    lib_options = []
+
     def run_app(self, records="sub"):
-        code, _, _ = run_main(
-            "run", "--lib", os.environ["HEAPLINE_LIB"], "--records", str(self.records / records),
+        code, _, err = run_main(
+            "run", *self.lib_options, "--records", str(self.records / records),
             "--name", "alloc", "--", sys.executable, "-c", "x = bytes(20_000_000)",
         )
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 0, err)
+        return err
 
     def test_same_program_within_its_baseline(self):
         self.run_app("base")
@@ -450,6 +448,32 @@ class ContractTest(TmpDirTestCase):
     def test_run_leaves_the_callers_environment_alone(self):
         self.run_app()
         self.assertNotIn("HEAPLINE_OUTPUT", os.environ)
+
+
+# Each mode is skipped only when its variable is unset: a wrong HEAPLINE_LIB,
+# or HEAPLINE_INSTALLED without the package, must fail, not skip.
+@unittest.skipUnless(
+    sys.platform.startswith("linux") and "HEAPLINE_LIB" in os.environ,
+    "set HEAPLINE_LIB to a built libheapline.so (Linux only)",
+)
+class ContractTestWithLib(ContractTests, TmpDirTestCase):
+    def setUp(self):
+        super().setUp()
+        self.lib_options = ["--lib", os.environ["HEAPLINE_LIB"]]
+
+
+@unittest.skipUnless(
+    sys.platform.startswith("linux") and "HEAPLINE_INSTALLED" in os.environ,
+    "set HEAPLINE_INSTALLED with the heapline package installed (Linux only)",
+)
+class ContractTestInstalled(ContractTests, TmpDirTestCase):
+    """The same runs without --lib: the dynamic linker finds the package's library."""
+
+    def test_reports_a_library_that_is_a_file(self):
+        err = self.run_app()
+        found = re.search(r"^heapline-gate: using (.+)$", err, re.M)
+        self.assertIsNotNone(found, err)
+        self.assertTrue(os.path.isfile(found.group(1)), found.group(1))
 
 
 if __name__ == "__main__":
