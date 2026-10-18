@@ -48,10 +48,15 @@ The tag fixes the version; without it you get the head of `main`.
 Run each program under heapline, then check the records against a budget file:
 
 ```
-heapline-gate run --lib build/libheapline.so --records records --name parser -- ./build/parser_test
-heapline-gate run --lib build/libheapline.so --records records --name server -- ./build/server_test
+heapline-gate run --records records --name parser -- ./build/parser_test
+heapline-gate run --records records --name server -- ./build/server_test
 heapline-gate check --budgets budgets.csv --records records
 ```
+
+Without `--lib`, `run` asks the dynamic linker which `libheapline.so` it
+would preload, the one the package installed, and prints its path. When the
+linker finds none, `run` exits with code 2 before starting the command.
+`--lib PATH` uses another copy, such as a build or the release archive.
 
 `budgets.csv`:
 
@@ -96,7 +101,7 @@ without a budget.
 
 `run` returns the exit code of the command, 128 + N when a signal N ended
 it, 127 when it cannot be started, and 2 when `run` itself refuses to start
-it (no library, a bad name, old records).
+it (no `libheapline.so` found, a bad name, old records).
 
 ## Budgets relative to a baseline
 
@@ -125,7 +130,8 @@ directory, since old records of a name still count.
 
 ## In GitHub Actions
 
-On a pull request, measure the target branch, then the change:
+On a pull request, measure the target branch, then the change. The package
+is chosen by architecture, so the same job runs on `ubuntu-24.04-arm`:
 
 ```yaml
 on:
@@ -143,10 +149,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download --repo ethan-puyaubreau/heapline --pattern '*-linux-x86_64.tar.gz*'
-          sha256sum -c heapline-v*-linux-x86_64.tar.gz.sha256
-          tar xzf heapline-v*-linux-x86_64.tar.gz
-          echo "HEAPLINE_LIB=$(echo "$PWD"/heapline-v*-linux-x86_64/lib/libheapline.so)" >> "$GITHUB_ENV"
+          arch=$(dpkg --print-architecture)
+          gh release download --repo ethan-puyaubreau/heapline --pattern "heapline_*_${arch}.deb*"
+          sha256sum -c heapline_*_${arch}.deb.sha256
+          sudo apt-get install -y ./heapline_*_${arch}.deb
           pipx install git+https://github.com/ethan-puyaubreau/heapline-gate@v0.1.0
 
       - name: Measure the target branch
@@ -154,12 +160,12 @@ jobs:
           git worktree add --detach base "origin/$GITHUB_BASE_REF"
           cd base
           ./build.sh  # your build
-          heapline-gate run --lib "$HEAPLINE_LIB" --records ../base-records --name parser -- ./build/parser_test
+          heapline-gate run --records ../base-records --name parser -- ./build/parser_test
 
       - name: Measure this change and check
         run: |
           ./build.sh
-          heapline-gate run --lib "$HEAPLINE_LIB" --records records --name parser -- ./build/parser_test
+          heapline-gate run --records records --name parser -- ./build/parser_test
           heapline-gate check --budgets budgets.csv --records records --baseline base-records
 ```
 
@@ -168,13 +174,15 @@ jobs:
 ```
 python -m unittest discover -s tests
 HEAPLINE_LIB=/path/to/libheapline.so python -m unittest discover -s tests -v
+HEAPLINE_INSTALLED=1 python -m unittest discover -s tests -v
 ```
 
 With `HEAPLINE_LIB` set on Linux, the tests also run the real library and read
 its real record, so a change in heapline's format fails here; a path that is
-not a library fails them too, rather than skipping them. CI runs them against
-the latest release of heapline and against its main branch, every week as
-well as on each change.
+not a library fails them too, rather than skipping them. `HEAPLINE_INSTALLED=1`
+runs them without `--lib`, against the installed package. CI runs them
+against the latest release of heapline, its main branch, and its Debian and
+RPM packages on x86_64 and aarch64, every week as well as on each change.
 
 ## Limits
 
