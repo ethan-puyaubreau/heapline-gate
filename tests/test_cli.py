@@ -1,11 +1,13 @@
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from heapline_gate.cli import parse_size, read_budgets, size
+from heapline_gate.cli import find_lib, parse_size, read_budgets, size
 from helpers import run_main, write_record
 
 MIB = 2**20
@@ -305,6 +307,110 @@ class RunTest(TmpDirTestCase):
         code, _, err = run_main("run", "--lib", str(lib), "--records", str(self.records), "--", "/no/such/program")
         self.assertEqual(code, 127)
         self.assertIn("cannot run", err)
+
+    def test_explicit_lib_does_not_ask_the_linker(self):
+        with mock.patch("heapline_gate.cli.find_lib") as find:
+            preload, _ = self.child_env("--lib", str(self.dir / "lib.so"), "--records", str(self.records), "--name", "app")
+        find.assert_not_called()
+        self.assertEqual(Path(preload), (self.dir / "lib.so").resolve())
+
+    def test_without_lib_preloads_what_the_linker_found(self):
+        lib = self.dir / "lib.so"
+        lib.write_bytes(b"")
+        out = self.dir / "env.txt"
+        script = "import os, sys; open(sys.argv[1], 'w').write(os.environ['LD_PRELOAD'])"
+        with mock.patch("heapline_gate.cli.find_lib", return_value=(str(lib), None)):
+            code, _, err = run_main("run", "--records", str(self.records), "--name", "app", "--", sys.executable, "-c", script, str(out))
+        self.assertEqual(code, 0, err)
+        self.assertIn("heapline-gate: using %s" % lib, err)
+        preload = out.read_text()
+        self.assertTrue(os.path.isabs(preload), preload)
+        self.assertTrue(os.path.samefile(preload, str(lib)))
+
+    def test_without_lib_and_none_found_the_command_does_not_run(self):
+        ran = self.dir / "ran"
+        script = "import sys; open(sys.argv[1], 'w')"
+        with mock.patch("heapline_gate.cli.find_lib", return_value=(None, "the dynamic linker did not report libheapline.so")):
+            code, _, err = run_main("run", "--records", str(self.records), "--name", "app", "--", sys.executable, "-c", script, str(ran))
+        self.assertEqual(code, 2)
+        self.assertFalse(ran.exists())
+        self.assertIn("libheapline.so", err)
+        self.assertIn("install the heapline package or pass --lib", err)
+
+
+class FindLibTest(TmpDirTestCase):
+    """find_lib reads ld.so's trace: anything but a clear answer is a miss."""
+
+    def find(self, stdout=b"", stderr=b"", env=None):
+        trace = subprocess.CompletedProcess([], 0, stdout=stdout, stderr=stderr)
+        with mock.patch("heapline_gate.cli.subprocess.run", return_value=trace) as run:
+            return find_lib(env or {}), run
+
+    def lib(self, directory="lib"):
+        path = self.dir / directory / "libheapline.so"
+        path.parent.mkdir()
+        path.write_bytes(b"")
+        return str(path)
+
+    def trace_line(self, path):
+        return ("\tlibheapline.so => %s (0x00007f3a1c2d4000)\n" % path).encode()
+
+    def test_found(self):
+        lib = self.lib()
+        stdout = b"\tlinux-vdso.so.1 (0x00007ffd)\n" + self.trace_line(lib) + b"\tlibc.so.6 => /lib/libc.so.6 (0x00007f3a)\n"
+        # ld.so's complaint about another preloaded library is not a miss.
+        stderr = b"ERROR: ld.so: object 'other.so' from LD_PRELOAD cannot be preloaded: ignored.\n"
+        self.assertEqual(self.find(stdout, stderr)[0], (lib, None))
+
+    def test_path_with_spaces(self):
+        lib = self.lib("my libs (0x1)")
+        self.assertEqual(self.find(self.trace_line(lib))[0], (lib, None))
+
+    def test_absolute_preload_line_is_not_the_answer(self):
+        # ld.so prints LD_PRELOAD entries given by path without "=>".
+        lib = self.lib()
+        (path, error), _ = self.find(("\t%s (0x00007f3a)\n" % lib).encode())
+        self.assertIsNone(path)
+        self.assertEqual(error, "the dynamic linker did not report libheapline.so")
+
+    def test_missing_library_quotes_ld_so(self):
+        stderr = b"ERROR: ld.so: object 'libheapline.so' from LD_PRELOAD cannot be preloaded (cannot open shared object file): ignored.\n"
+        (path, error), _ = self.find(b"\tlibc.so.6 => /lib/libc.so.6 (0x00007f3a)\n", stderr)
+        self.assertIsNone(path)
+        self.assertIn("cannot open shared object file", error)
+
+    def test_silent_linker(self):
+        # A static python: ld.so traces nothing and says nothing.
+        self.assertEqual(self.find()[0], (None, "the dynamic linker did not report libheapline.so"))
+
+    def test_rejects_what_is_not_an_absolute_file(self):
+        for path in ("libheapline.so", "not found", str(self.dir / "absent.so"), str(self.dir)):
+            with self.subTest(path=path):
+                found, error = self.find(self.trace_line(path))[0]
+                self.assertIsNone(found)
+                self.assertIn("reported", error)
+
+    def test_linker_cannot_run(self):
+        for exc in (OSError("no such file"), subprocess.TimeoutExpired("python", 60)):
+            with self.subTest(exc=exc):
+                with mock.patch("heapline_gate.cli.subprocess.run", side_effect=exc):
+                    path, error = find_lib({})
+                self.assertIsNone(path)
+                self.assertIn(str(exc), error)
+
+    def test_trace_environment(self):
+        env = {"LD_PRELOAD": "/opt/other.so", "LD_LIBRARY_PATH": "/opt/lib", "HEAPLINE_OUTPUT": "/tmp/x.%p.csv"}
+        _, run = self.find(env=env)
+        (argv,), kwargs = run.call_args
+        self.assertEqual(argv, [sys.executable, "-c", ""])
+        self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
+        self.assertEqual(
+            kwargs["env"],
+            {"LD_TRACE_LOADED_OBJECTS": "1", "LD_PRELOAD": "libheapline.so:/opt/other.so", "LD_LIBRARY_PATH": "/opt/lib"},
+        )
+        self.assertIn("HEAPLINE_OUTPUT", env, "the caller's dict must not change")
+        _, run = self.find()
+        self.assertEqual(run.call_args[1]["env"]["LD_PRELOAD"], "libheapline.so")
 
 
 # Skipped only when HEAPLINE_LIB is unset: a wrong path must fail, not skip.
