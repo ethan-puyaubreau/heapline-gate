@@ -34,13 +34,13 @@ source, and give `run` the path of `libheapline.so` with `--lib`.
 Then heapline-gate itself:
 
 ```
-pipx install git+https://github.com/ethan-puyaubreau/heapline-gate@v0.1.0
+pipx install git+https://github.com/ethan-puyaubreau/heapline-gate@v0.2.0
 ```
 
 Outside a GitHub runner, install `pipx` and `git` first and run
 `pipx ensurepath`. On RHEL 8, whose `python3` is 3.6, use
 `sudo dnf install -y python3.11-pip git` then
-`python3.11 -m pip install --user git+https://github.com/ethan-puyaubreau/heapline-gate@v0.1.0`.
+`python3.11 -m pip install --user git+https://github.com/ethan-puyaubreau/heapline-gate@v0.2.0`.
 The tag fixes the version; without it you get the head of `main`.
 
 ## Use
@@ -153,7 +153,7 @@ jobs:
           gh release download --repo ethan-puyaubreau/heapline --pattern "heapline_*_${arch}.deb*"
           sha256sum -c heapline_*_${arch}.deb.sha256
           sudo apt-get install -y ./heapline_*_${arch}.deb
-          pipx install git+https://github.com/ethan-puyaubreau/heapline-gate@v0.1.0
+          pipx install git+https://github.com/ethan-puyaubreau/heapline-gate@v0.2.0
 
       - name: Measure the target branch
         run: |
