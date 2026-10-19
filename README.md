@@ -38,7 +38,10 @@ pipx install git+https://github.com/ethan-puyaubreau/heapline-gate@v0.2.0
 ```
 
 Outside a GitHub runner, install `pipx` and `git` first and run
-`pipx ensurepath`. On RHEL 8, whose `python3` is 3.6, use
+`pipx ensurepath`. RHEL 8 and 9 have no `pipx` outside EPEL, so use pip
+there. On RHEL 9, use `sudo dnf install -y python3-pip git` then
+`python3 -m pip install --user git+https://github.com/ethan-puyaubreau/heapline-gate@v0.2.0`.
+On RHEL 8, whose `python3` is 3.6, use
 `sudo dnf install -y python3.11-pip git` then
 `python3.11 -m pip install --user git+https://github.com/ethan-puyaubreau/heapline-gate@v0.2.0`.
 The tag fixes the version; without it you get the head of `main`.
