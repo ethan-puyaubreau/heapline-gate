@@ -141,19 +141,71 @@ def cmd_check(args):
     return 1 if failed else 0
 
 
+def find_lib(env):
+    """Ask the dynamic linker which libheapline.so a command run with ENV would preload.
+
+    Returns (absolute path, None), or (None, why not).
+    """
+    env = dict(env)
+    # ld.so lists the libraries it would load, in its own search order
+    # (LD_LIBRARY_PATH, its cache, ...), and runs nothing.
+    env["LD_TRACE_LOADED_OBJECTS"] = "1"
+    env["LD_PRELOAD"] = ":".join(["libheapline.so"] + ([env["LD_PRELOAD"]] if env.get("LD_PRELOAD") else []))
+    # Should heapline ever run here, it must not leave a record where check looks.
+    env.pop("HEAPLINE_OUTPUT", None)
+    try:
+        trace = subprocess.run(
+            [sys.executable, "-c", ""], env=env, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, "cannot ask the dynamic linker: %s" % e
+    # Only this line counts: ld.so exits 0 either way, and its stderr may
+    # complain about other preloaded libraries even when it found ours.
+    for line in os.fsdecode(trace.stdout).splitlines():
+        line = line.lstrip()
+        if line.startswith("libheapline.so => "):
+            # "libheapline.so => /path/libheapline.so (0x...)"; the path may hold spaces.
+            path = line[len("libheapline.so => "):].rpartition(" (0x")[0]
+            if os.path.isabs(path) and os.path.isfile(path):
+                return path, None
+            return None, "the dynamic linker reported %r" % line
+    # A static python makes ld.so print nothing at all.
+    return None, os.fsdecode(trace.stderr).strip() or "the dynamic linker did not report libheapline.so"
+
+
 def cmd_run(args):
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         print("heapline-gate: no command given", file=sys.stderr)
         return 2
+    lib = args.lib
+    if lib is None:
+        lib, error = find_lib(os.environ)
+        if lib is None:
+            print(
+                "heapline-gate: cannot find libheapline.so (%s); install the heapline package or pass --lib" % error,
+                file=sys.stderr,
+            )
+            return 2
+        print("heapline-gate: using %s" % lib, file=sys.stderr)
     # Absolute, so that a program that changes directory still loads the
     # library and writes its record where check looks.
-    lib = Path(args.lib).resolve()
+    lib = Path(lib).resolve()
     records = Path(args.records).resolve()
     if not lib.is_file():
         print("heapline-gate: %s is not a file" % lib, file=sys.stderr)
         return 2
-    name = args.name or os.path.basename(command[0])
+    # ld.so splits LD_PRELOAD on spaces and colons: the child would run
+    # without heapline. Checked after resolve, which follows symlinks.
+    # (A Windows drive letter only matters to the tests run there.)
+    if any(c in str(lib)[len(lib.drive):] for c in " :"):
+        print(
+            "heapline-gate: %s holds a space or a colon, which LD_PRELOAD cannot carry; copy the library elsewhere" % lib,
+            file=sys.stderr,
+        )
+        return 2
+    name =args.name or os.path.basename(command[0])
     # heapline expands % sequences and does not create directories, so such
     # a name would never give a record that check finds.
     if not re.fullmatch(r"[\w.+-]+", name):
@@ -194,7 +246,9 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     run = sub.add_parser("run", help="run a command with heapline preloaded")
-    run.add_argument("--lib", required=True, help="path to libheapline.so")
+    run.add_argument(
+        "--lib", help="path to libheapline.so (default: the one the dynamic linker finds, as the heapline package installs it)"
+    )
     run.add_argument("--records", required=True, help="directory for the records")
     run.add_argument("--name", help="record name (default: the command's file name)")
     run.add_argument("command", nargs=argparse.REMAINDER, help="-- COMMAND [ARGS...]")

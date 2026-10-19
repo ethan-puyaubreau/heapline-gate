@@ -23,7 +23,7 @@ jobs:
         include:
           # The oldest Python that pyproject.toml accepts, and the newest.
           - python: '3.8'
-            os: ubuntu-22.04
+            os: ubuntu-24.04
           - python: '3.13'
             os: ubuntu-24.04
     steps:
@@ -84,3 +84,58 @@ jobs:
       # With HEAPLINE_LIB set, the contract tests run the real library.
       - name: Test
         run: python3 -m unittest discover -s tests -v
+
+  package:
+    name: heapline package on ${{ matrix.distro }}, ${{ endsWith(matrix.runner, '-arm') && 'arm64' || 'x86_64' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-24.04-arm is free for public repositories.
+        runner: [ ubuntu-24.04, ubuntu-24.04-arm ]
+        distro: [ ubuntu, rocky8, rocky9 ]
+        include:
+          # RHEL 8's own python3 is 3.6, older than heapline-gate accepts.
+          - distro: rocky8
+            image: rockylinux:8
+            python: python3.11
+          - distro: rocky9
+            image: rockylinux:9
+            python: python3
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # The commands of the README.
+      - name: Install the .deb of the latest release of heapline
+        if: matrix.distro == 'ubuntu'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          arch=$(dpkg --print-architecture)
+          gh release download --repo ethan-puyaubreau/heapline --pattern "heapline_*_${arch}.deb*"
+          sha256sum -c heapline_*_${arch}.deb.sha256
+          sudo apt-get install -y ./heapline_*_${arch}.deb
+
+      - name: Test
+        if: matrix.distro == 'ubuntu'
+        run: sh .github/check-installed.sh python3 sudo apt-get remove -y heapline
+
+      # On the runner: the container has no gh.
+      - name: Download the .rpm of the latest release of heapline
+        if: matrix.distro != 'ubuntu'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo ethan-puyaubreau/heapline --pattern "heapline-*.el8.$(uname -m).rpm*"
+          sha256sum -c heapline-*.el8.$(uname -m).rpm.sha256
+
+      - name: Install it in ${{ matrix.image }} and test
+        if: matrix.distro != 'ubuntu'
+        env:
+          IMAGE: ${{ matrix.image }}
+          PYTHON: ${{ matrix.python }}
+        run: |
+          rpm=$(echo heapline-*.el8.$(uname -m).rpm)
+          docker run --rm -v "$PWD:/w" -w /w "$IMAGE" sh -c \
+            "dnf install -y ./$rpm $PYTHON && sh .github/check-installed.sh $PYTHON dnf remove -y heapline"

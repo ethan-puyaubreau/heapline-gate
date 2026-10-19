@@ -9,24 +9,70 @@ version are refused. It does not change heapline.
 
 ## Install
 
+heapline comes as a package from its
+[release page](https://github.com/ethan-puyaubreau/heapline/releases), for
+x86_64 and aarch64. On Debian or Ubuntu:
+
 ```
-pipx install git+https://github.com/ethan-puyaubreau/heapline-gate@v0.1.0
+arch=$(dpkg --print-architecture)
+gh release download --repo ethan-puyaubreau/heapline --pattern "heapline_*_${arch}.deb*"
+sha256sum -c heapline_*_${arch}.deb.sha256
+sudo apt-get install -y ./heapline_*_${arch}.deb
 ```
 
-or `pip install .` from a clone. The tag fixes the version; without it you
-get the head of `main`. heapline itself comes from its
-[release page](https://github.com/ethan-puyaubreau/heapline/releases) or is
-built from source; heapline-gate needs only the path to `libheapline.so`.
+On RHEL, Rocky or Alma 8 and 9, the `.el8` package fits both:
+
+```
+gh release download --repo ethan-puyaubreau/heapline --pattern "heapline-*.el8.$(uname -m).rpm*"
+sha256sum -c heapline-*.el8.$(uname -m).rpm.sha256
+sudo dnf install -y ./heapline-*.el8.$(uname -m).rpm
+```
+
+Outside a GitHub runner, these blocks need the GitHub CLI `gh`, logged in
+with `gh auth login`: `gh release download` refuses to run without a login,
+even on this public repository. RHEL, Rocky and Alma do not ship `gh`; add
+GitHub's own repository from <https://cli.github.com>, or download the two
+files from the release page by hand and go on from `sha256sum -c`.
+
+Elsewhere, or without root, use the release archive or build heapline from
+source, and give `run` the path of `libheapline.so` with `--lib`.
+
+Then heapline-gate itself:
+
+```
+pipx install git+https://github.com/ethan-puyaubreau/heapline-gate@v0.2.0
+```
+
+Outside a GitHub runner, install `pipx` and `git` first and run
+`pipx ensurepath`. The `pipx` of Debian 12 and Ubuntu 22.04 or later takes
+this line; Ubuntu 20.04's is too old for it and Debian 11 has none, so use
+pip there: `sudo apt-get install -y python3-pip git` then
+`python3 -m pip install --user git+https://github.com/ethan-puyaubreau/heapline-gate@v0.2.0`.
+That puts `heapline-gate` in `~/.local/bin`, which is on `PATH` only in a
+login shell started after the directory exists; run
+`export PATH="$HOME/.local/bin:$PATH"` or log in again.
+RHEL 8 and 9 have no `pipx` outside EPEL, so use pip
+there too. On RHEL 9, use `sudo dnf install -y python3-pip git` then
+`python3 -m pip install --user git+https://github.com/ethan-puyaubreau/heapline-gate@v0.2.0`.
+On RHEL 8, whose `python3` is 3.6, use
+`sudo dnf install -y python3.11-pip git` then
+`python3.11 -m pip install --user git+https://github.com/ethan-puyaubreau/heapline-gate@v0.2.0`.
+The tag fixes the version; without it you get the head of `main`.
 
 ## Use
 
 Run each program under heapline, then check the records against a budget file:
 
 ```
-heapline-gate run --lib build/libheapline.so --records records --name parser -- ./build/parser_test
-heapline-gate run --lib build/libheapline.so --records records --name server -- ./build/server_test
+heapline-gate run --records records --name parser -- ./build/parser_test
+heapline-gate run --records records --name server -- ./build/server_test
 heapline-gate check --budgets budgets.csv --records records
 ```
+
+Without `--lib`, `run` asks the dynamic linker which `libheapline.so` it
+would preload, the one the package installed, and prints its path. When the
+linker finds none, `run` exits with code 2 before starting the command.
+`--lib PATH` uses another copy, such as a build or the release archive.
 
 `budgets.csv`:
 
@@ -71,7 +117,7 @@ without a budget.
 
 `run` returns the exit code of the command, 128 + N when a signal N ended
 it, 127 when it cannot be started, and 2 when `run` itself refuses to start
-it (no library, a bad name, old records).
+it (no `libheapline.so` found, a bad name, old records).
 
 ## Budgets relative to a baseline
 
@@ -100,7 +146,8 @@ directory, since old records of a name still count.
 
 ## In GitHub Actions
 
-On a pull request, measure the target branch, then the change:
+On a pull request, measure the target branch, then the change. The package
+is chosen by architecture, so the same job runs on `ubuntu-24.04-arm`:
 
 ```yaml
 on:
@@ -118,23 +165,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download --repo ethan-puyaubreau/heapline --pattern '*-linux-x86_64.tar.gz*'
-          sha256sum -c heapline-v*-linux-x86_64.tar.gz.sha256
-          tar xzf heapline-v*-linux-x86_64.tar.gz
-          echo "HEAPLINE_LIB=$(echo "$PWD"/heapline-v*-linux-x86_64/lib/libheapline.so)" >> "$GITHUB_ENV"
-          pipx install git+https://github.com/ethan-puyaubreau/heapline-gate@v0.1.0
+          arch=$(dpkg --print-architecture)
+          gh release download --repo ethan-puyaubreau/heapline --pattern "heapline_*_${arch}.deb*"
+          sha256sum -c heapline_*_${arch}.deb.sha256
+          sudo apt-get install -y ./heapline_*_${arch}.deb
+          pipx install git+https://github.com/ethan-puyaubreau/heapline-gate@v0.2.0
 
       - name: Measure the target branch
         run: |
           git worktree add --detach base "origin/$GITHUB_BASE_REF"
           cd base
           ./build.sh  # your build
-          heapline-gate run --lib "$HEAPLINE_LIB" --records ../base-records --name parser -- ./build/parser_test
+          heapline-gate run --records ../base-records --name parser -- ./build/parser_test
 
       - name: Measure this change and check
         run: |
           ./build.sh
-          heapline-gate run --lib "$HEAPLINE_LIB" --records records --name parser -- ./build/parser_test
+          heapline-gate run --records records --name parser -- ./build/parser_test
           heapline-gate check --budgets budgets.csv --records records --baseline base-records
 ```
 
@@ -142,14 +189,17 @@ jobs:
 
 ```
 python -m unittest discover -s tests
-HEAPLINE_LIB=/path/to/libheapline.so python -m unittest discover -s tests -v
+HEAPLINE_LIB=/path/to/libheapline.so python3 -m unittest discover -s tests -v
+HEAPLINE_INSTALLED=1 python3 -m unittest discover -s tests -v
 ```
 
 With `HEAPLINE_LIB` set on Linux, the tests also run the real library and read
 its real record, so a change in heapline's format fails here; a path that is
-not a library fails them too, rather than skipping them. CI runs them against
-the latest release of heapline and against its main branch, every week as
-well as on each change.
+not a library fails them too, rather than skipping them. `HEAPLINE_INSTALLED=1`
+runs them without `--lib`, against the installed package; on RHEL 8, use
+`python3.11` (from `sudo dnf install -y python3.11`), as its `python3` is 3.6. CI runs them
+against the latest release of heapline, its main branch, and its Debian and
+RPM packages on x86_64 and aarch64, every week as well as on each change.
 
 ## Limits
 
