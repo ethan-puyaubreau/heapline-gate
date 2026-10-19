@@ -28,6 +28,12 @@ sha256sum -c heapline-*.el8.$(uname -m).rpm.sha256
 sudo dnf install -y ./heapline-*.el8.$(uname -m).rpm
 ```
 
+Outside a GitHub runner, these blocks need the GitHub CLI `gh`, logged in
+with `gh auth login`: `gh release download` refuses to run without a login,
+even on this public repository. RHEL, Rocky and Alma do not ship `gh`; add
+GitHub's own repository from <https://cli.github.com>, or download the two
+files from the release page by hand and go on from `sha256sum -c`.
+
 Elsewhere, or without root, use the release archive or build heapline from
 source, and give `run` the path of `libheapline.so` with `--lib`.
 
