@@ -196,7 +196,16 @@ def cmd_run(args):
     if not lib.is_file():
         print("heapline-gate: %s is not a file" % lib, file=sys.stderr)
         return 2
-    name = args.name or os.path.basename(command[0])
+    # ld.so splits LD_PRELOAD on spaces and colons: the child would run
+    # without heapline. Checked after resolve, which follows symlinks.
+    # (A Windows drive letter only matters to the tests run there.)
+    if any(c in str(lib)[len(lib.drive):] for c in " :"):
+        print(
+            "heapline-gate: %s holds a space or a colon, which LD_PRELOAD cannot carry; copy the library elsewhere" % lib,
+            file=sys.stderr,
+        )
+        return 2
+    name =args.name or os.path.basename(command[0])
     # heapline expands % sequences and does not create directories, so such
     # a name would never give a record that check finds.
     if not re.fullmatch(r"[\w.+-]+", name):

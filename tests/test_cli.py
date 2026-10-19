@@ -327,6 +327,37 @@ class RunTest(TmpDirTestCase):
         self.assertTrue(os.path.isabs(preload), preload)
         self.assertTrue(os.path.samefile(preload, str(lib)))
 
+    def test_refuses_a_library_path_that_ld_so_would_split(self):
+        ran = self.dir / "ran"
+        script = "import sys; open(sys.argv[1], 'w')"
+        # ':' cannot be in a Windows file name.
+        for directory in ["my libs"] + ([] if os.name == "nt" else ["a:b"]):
+            lib = self.dir / directory / "libheapline.so"
+            lib.parent.mkdir()
+            lib.write_bytes(b"")
+            for how in ("--lib", "found"):
+                with self.subTest(directory=directory, how=how):
+                    options = ["--lib", str(lib)] if how == "--lib" else []
+                    with mock.patch("heapline_gate.cli.find_lib", return_value=(str(lib), None)):
+                        code, _, err = run_main(
+                            "run", *options, "--records", str(self.records), "--name", "app",
+                            "--", sys.executable, "-c", script, str(ran),
+                        )
+                    self.assertEqual(code, 2)
+                    self.assertIn("space or a colon", err)
+                    self.assertFalse(ran.exists())
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_refuses_a_symlink_into_a_directory_with_a_space(self):
+        lib = self.dir / "my libs" / "libheapline.so"
+        lib.parent.mkdir()
+        lib.write_bytes(b"")
+        link = self.dir / "libheapline.so"
+        link.symlink_to(lib)
+        code, _, err = run_main("run", "--lib", str(link), "--records", str(self.records), "--name", "app", "--", "true")
+        self.assertEqual(code, 2)
+        self.assertIn("space or a colon", err)
+
     def test_without_lib_and_none_found_the_command_does_not_run(self):
         ran = self.dir / "ran"
         script = "import sys; open(sys.argv[1], 'w')"
