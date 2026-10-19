@@ -182,14 +182,15 @@ jobs:
 
 ```
 python -m unittest discover -s tests
-HEAPLINE_LIB=/path/to/libheapline.so python -m unittest discover -s tests -v
-HEAPLINE_INSTALLED=1 python -m unittest discover -s tests -v
+HEAPLINE_LIB=/path/to/libheapline.so python3 -m unittest discover -s tests -v
+HEAPLINE_INSTALLED=1 python3 -m unittest discover -s tests -v
 ```
 
 With `HEAPLINE_LIB` set on Linux, the tests also run the real library and read
 its real record, so a change in heapline's format fails here; a path that is
 not a library fails them too, rather than skipping them. `HEAPLINE_INSTALLED=1`
-runs them without `--lib`, against the installed package. CI runs them
+runs them without `--lib`, against the installed package; on RHEL 8, use
+`python3.11` (from `sudo dnf install -y python3.11`), as its `python3` is 3.6. CI runs them
 against the latest release of heapline, its main branch, and its Debian and
 RPM packages on x86_64 and aarch64, every week as well as on each change.
 
