@@ -48,6 +48,9 @@ Outside a GitHub runner, install `pipx` and `git` first and run
 this line; Ubuntu 20.04's is too old for it and Debian 11 has none, so use
 pip there: `sudo apt-get install -y python3-pip git` then
 `python3 -m pip install --user git+https://github.com/ethan-puyaubreau/heapline-gate@v0.2.0`.
+That puts `heapline-gate` in `~/.local/bin`, which is on `PATH` only in a
+login shell started after the directory exists; run
+`export PATH="$HOME/.local/bin:$PATH"` or log in again.
 RHEL 8 and 9 have no `pipx` outside EPEL, so use pip
 there too. On RHEL 9, use `sudo dnf install -y python3-pip git` then
 `python3 -m pip install --user git+https://github.com/ethan-puyaubreau/heapline-gate@v0.2.0`.
