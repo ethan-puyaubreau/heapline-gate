@@ -7,8 +7,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from heapline_gate.cli import find_lib, parse_size, read_budgets, size
 from helpers import run_main, write_record
+
+from heapline_gate.cli import find_lib, parse_size, read_budgets, size
 
 MIB = 2**20
 

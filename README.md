@@ -214,3 +214,15 @@ RPM packages on x86_64 and aarch64, every week as well as on each change.
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+## Development
+
+```
+python3 -m pip install -e ".[dev]"
+python3 -m unittest discover -s tests
+ruff check . && mypy
+coverage run -m unittest discover -s tests && coverage report
+```
+
+CI runs the same three checks. The code must stay valid on Python 3.8:
+`ruff` is set to that target, and `mypy` runs on the newest Python only.

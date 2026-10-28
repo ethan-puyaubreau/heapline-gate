@@ -6,7 +6,7 @@ refused, as that page asks of tools.
 """
 
 from pathlib import Path
-from typing import List, NamedTuple, Tuple
+from typing import List, NamedTuple, Tuple, Union
 
 MAGIC = "# heapline 1"
 COLUMNS = [
@@ -31,7 +31,7 @@ class Record(NamedTuple):
     live_heap_at_exit_bytes: int
 
 
-def read_record(path) -> Record:
+def read_record(path: Union[str, Path]) -> Record:
     """Parse one record file. Raises ValueError if it is not a valid one."""
     path = Path(path)
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -56,7 +56,7 @@ def read_record(path) -> Record:
     return Record(path, peak, live)
 
 
-def read_records(directory) -> Tuple[List[Record], List[str]]:
+def read_records(directory: Union[str, Path]) -> Tuple[List[Record], List[str]]:
     """Read every *.csv file of a directory.
 
     Returns the valid records and one message per file that was skipped.
