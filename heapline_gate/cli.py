@@ -103,19 +103,22 @@ def cmd_check(args):
 
     claimed = set()
     failed = missing = False
+    checked = 0
+    # With --allow-missing, a budget without a record or baseline is only noted.
+    note = " (allowed)" if args.allow_missing else ""
     for name, max_peak, percent, max_live in budgets:
         mine = records_of(name, records)
         claimed.update(r.path for r in mine)
         if not mine:
-            print("%-30s NO RECORD" % name)
-            missing = True
+            print("%-30s NO RECORD%s" % (name, note))
+            missing = missing or not args.allow_missing
             continue
         relative_to = ""
         if percent is not None:
             theirs = records_of(name, baseline)
             if not theirs:
-                print("%-30s NO BASELINE" % name)
-                missing = True
+                print("%-30s NO BASELINE%s" % (name, note))
+                missing = missing or not args.allow_missing
                 continue
             base_peak = max(r.peak_heap_bytes for r in theirs)
             max_peak = int(base_peak * (100 + percent) / 100)
@@ -131,13 +134,14 @@ def cmd_check(args):
         verdict = "FAIL: " + "; ".join(over) if over else "ok"
         print("%-30s peak %-10s budget %-10s %s%s" % (name, size(peak), size(max_peak), verdict, relative_to))
         failed = failed or bool(over)
+        checked += 1
 
     unbudgeted = sorted(r.path.name for r in records if r.path not in claimed)
     if unbudgeted:
         print("heapline-gate: records without a budget: %s" % ", ".join(unbudgeted), file=sys.stderr)
-    # A gate that saw nothing must not pass.
-    if missing or not records:
-        return 2
+    # A gate that saw nothing must not pass, even if every miss is allowed.
+    if missing or not checked:
+        return 3
     return 1 if failed else 0
 
 
@@ -258,6 +262,11 @@ def main(argv=None):
     check.add_argument("--budgets", required=True, help="CSV: name,max_peak[,max_live]")
     check.add_argument("--records", required=True, help="directory written by run")
     check.add_argument("--baseline", help="directory of records that +N%% budgets are relative to")
+    check.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help="do not fail on a budget without a record or a baseline, as long as one budget is checked",
+    )
     check.set_defaults(func=cmd_check)
 
     args = parser.parse_args(argv)

@@ -109,9 +109,13 @@ none, and let it pass. To measure again, remove the directory or use another.
 |---|---|
 | 0 | every budget is respected |
 | 1 | a budget is exceeded |
-| 2 | nothing could be checked: no valid record, a budget without a record or without a baseline, or a bad budget file |
+| 2 | `check` was misused: a bad budget file, a relative budget without `--baseline`, a path that is not a directory |
+| 3 | `check` found something missing: a budget without a record or without a baseline, or no budget checked at all |
 
-A gate that saw nothing never passes. Records that are skipped (unknown
+Versions up to 0.2.0 gave 2 for both. A gate that saw nothing never passes.
+`--allow-missing` lets a budget without a record or a baseline pass with a
+note (`NO RECORD (allowed)`), for a job that does not build every program
+every time; at least one budget must still be checked, or the code is 3. Records that are skipped (unknown
 version, truncated, a negative heap) are named on stderr, as are records
 without a budget.
 
@@ -136,8 +140,8 @@ server,512MiB,1MiB
 heapline-gate check --budgets budgets.csv --records records --baseline base-records
 ```
 
-A relative budget without `--baseline`, or whose name has no record in the
-baseline (`NO BASELINE`), gives exit code 2. `max_live` stays a size.
+A relative budget without `--baseline` gives exit code 2; one whose name has
+no record in the baseline (`NO BASELINE`) gives 3. `max_live` stays a size.
 
 The baseline is best measured in the same job, from the branch the change
 goes into: both runs then share the machine and the C library. A baseline
@@ -209,7 +213,7 @@ RPM packages on x86_64 and aarch64, every week as well as on each change.
   within a small fraction of a percent (see heapline's documentation), so keep
   a margin in the budget.
 - A process killed by a signal writes no record, so its budget reports
-  `NO RECORD` (exit code 2), not a pass.
+  `NO RECORD` (exit code 3), not a pass.
 
 ## License
 
