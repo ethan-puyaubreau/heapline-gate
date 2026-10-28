@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import json
 import os
 import re
 import subprocess
@@ -73,6 +74,95 @@ def size(n):
     return "%d B" % n
 
 
+def evaluate(budgets, records, baseline):
+    """Compare every budget with the records of its name.
+
+    Returns (results, claimed): one dict per budget, and the paths of the
+    records that a budget covers. A result has a status of "ok", "fail",
+    "no_record" or "no_baseline".
+    """
+
+    # Anything else in the directory is not ours.
+    def records_of(name, among):
+        pattern = record_name(name)
+        return [r for r in among if pattern.fullmatch(r.path.name)]
+
+    claimed = set()
+    results = []
+    for name, max_peak, percent, max_live in budgets:
+        result = {"name": name, "status": None, "peak": None, "budget": None, "live": None,
+                  "max_live": max_live, "over": [], "baseline_peak": None, "percent": None}
+        results.append(result)
+        mine = records_of(name, records)
+        claimed.update(r.path for r in mine)
+        if not mine:
+            result["status"] = "no_record"
+            continue
+        if percent is not None:
+            theirs = records_of(name, baseline)
+            if not theirs:
+                result["status"] = "no_baseline"
+                continue
+            base_peak = max(r.peak_heap_bytes for r in theirs)
+            max_peak = int(base_peak * (100 + percent) / 100)
+            result["baseline_peak"] = base_peak
+            result["percent"] = float(percent)
+        peak = max(r.peak_heap_bytes for r in mine)
+        live = max(r.live_heap_at_exit_bytes for r in mine)
+        # The excess, not both sizes: rounded, they may read the same.
+        if peak > max_peak:
+            result["over"].append(("peak", peak - max_peak))
+        if max_live is not None and live > max_live:
+            result["over"].append(("live at exit", live - max_live))
+        result.update(peak=peak, budget=max_peak, live=live, status="fail" if result["over"] else "ok")
+    return results, claimed
+
+
+def text_report(results):
+    lines = []
+    for r in results:
+        if r["status"] == "no_record":
+            lines.append("%-30s NO RECORD" % r["name"])
+        elif r["status"] == "no_baseline":
+            lines.append("%-30s NO BASELINE" % r["name"])
+        else:
+            relative_to = ""
+            if r["percent"] is not None:
+                relative_to = " (+%g%% of %s)" % (r["percent"], size(r["baseline_peak"]))
+            verdict = "ok"
+            if r["over"]:
+                verdict = "FAIL: " + "; ".join("%s over by %s" % (what, size(n)) for what, n in r["over"])
+            lines.append("%-30s peak %-10s budget %-10s %s%s" % (r["name"], size(r["peak"]), size(r["budget"]), verdict, relative_to))
+    return "\n".join(lines)
+
+
+def markdown_report(results):
+    lines = ["| Name | Peak | Budget | Result |", "|---|---|---|---|"]
+    for r in results:
+        if r["status"] in ("no_record", "no_baseline"):
+            lines.append("| %s | | | %s |" % (r["name"], "NO RECORD" if r["status"] == "no_record" else "NO BASELINE"))
+            continue
+        verdict = ":x: " + "; ".join("%s over by %s" % (what, size(n)) for what, n in r["over"]) if r["over"] else ":white_check_mark: ok"
+        budget = size(r["budget"])
+        if r["percent"] is not None:
+            budget += " (+%g%% of %s)" % (r["percent"], size(r["baseline_peak"]))
+        lines.append("| %s | %s | %s | %s |" % (r["name"], size(r["peak"]), budget, verdict))
+    return "\n".join(lines)
+
+
+def json_report(results, unbudgeted, exit_code):
+    return json.dumps(
+        {
+            "exit_code": exit_code,
+            "budgets": [
+                dict(r, over=[{"what": what, "bytes": n} for what, n in r["over"]]) for r in results
+            ],
+            "records_without_budget": unbudgeted,
+        },
+        indent=2,
+    )
+
+
 def cmd_check(args):
     try:
         budgets = read_budgets(args.budgets)
@@ -96,49 +186,22 @@ def cmd_check(args):
         for e in errors:
             print("heapline-gate: skipped baseline %s" % e, file=sys.stderr)
 
-    # Anything else in the directory is not ours.
-    def records_of(name, among):
-        pattern = record_name(name)
-        return [r for r in among if pattern.fullmatch(r.path.name)]
-
-    claimed = set()
-    failed = missing = False
-    for name, max_peak, percent, max_live in budgets:
-        mine = records_of(name, records)
-        claimed.update(r.path for r in mine)
-        if not mine:
-            print("%-30s NO RECORD" % name)
-            missing = True
-            continue
-        relative_to = ""
-        if percent is not None:
-            theirs = records_of(name, baseline)
-            if not theirs:
-                print("%-30s NO BASELINE" % name)
-                missing = True
-                continue
-            base_peak = max(r.peak_heap_bytes for r in theirs)
-            max_peak = int(base_peak * (100 + percent) / 100)
-            relative_to = " (+%g%% of %s)" % (percent, size(base_peak))
-        peak = max(r.peak_heap_bytes for r in mine)
-        live = max(r.live_heap_at_exit_bytes for r in mine)
-        # The excess, not both sizes: rounded, they may read the same.
-        over = []
-        if peak > max_peak:
-            over.append("peak over by %s" % size(peak - max_peak))
-        if max_live is not None and live > max_live:
-            over.append("live at exit over by %s" % size(live - max_live))
-        verdict = "FAIL: " + "; ".join(over) if over else "ok"
-        print("%-30s peak %-10s budget %-10s %s%s" % (name, size(peak), size(max_peak), verdict, relative_to))
-        failed = failed or bool(over)
-
+    results, claimed = evaluate(budgets, records, baseline)
     unbudgeted = sorted(r.path.name for r in records if r.path not in claimed)
+    missing = any(r["status"] in ("no_record", "no_baseline") for r in results)
+    failed = any(r["status"] == "fail" for r in results)
+    # A gate that saw nothing must not pass.
+    code = 2 if missing or not records else 1 if failed else 0
+
+    if args.format == "json":
+        print(json_report(results, unbudgeted, code))
+    elif args.format == "markdown":
+        print(markdown_report(results))
+    else:
+        print(text_report(results))
     if unbudgeted:
         print("heapline-gate: records without a budget: %s" % ", ".join(unbudgeted), file=sys.stderr)
-    # A gate that saw nothing must not pass.
-    if missing or not records:
-        return 2
-    return 1 if failed else 0
+    return code
 
 
 def find_lib(env):
@@ -258,6 +321,12 @@ def main(argv=None):
     check.add_argument("--budgets", required=True, help="CSV: name,max_peak[,max_live]")
     check.add_argument("--records", required=True, help="directory written by run")
     check.add_argument("--baseline", help="directory of records that +N%% budgets are relative to")
+    check.add_argument(
+        "--format",
+        choices=("text", "json", "markdown"),
+        default="text",
+        help="how to print the results on stdout (default: text); markdown fits $GITHUB_STEP_SUMMARY",
+    )
     check.set_defaults(func=cmd_check)
 
     args = parser.parse_args(argv)
