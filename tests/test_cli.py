@@ -47,8 +47,8 @@ class TmpDirTestCase(unittest.TestCase):
         path.write_text(text, encoding="utf-8")
         return str(path)
 
-    def check(self, budgets_text):
-        return run_main("check", "--budgets", self.budgets(budgets_text), "--records", str(self.records))
+    def check(self, budgets_text, *extra):
+        return run_main("check", "--budgets", self.budgets(budgets_text), "--records", str(self.records), *extra)
 
 
 class CheckTest(TmpDirTestCase):
@@ -90,6 +90,30 @@ class CheckTest(TmpDirTestCase):
         code, _, _ = self.check("name,max_peak,max_live\na,20MiB,\nb,20MiB,1MiB\n")
         self.assertEqual(code, 0)
 
+    def test_allow_missing(self):
+        write_record(self.records, "app.100.csv")
+        text = "name,max_peak\napp,20MiB\nother,20MiB\n"
+        code, out, _ = self.check(text, "--allow-missing")
+        self.assertEqual(code, 0)
+        self.assertIn("NO RECORD (allowed)", out)
+
+    def test_allow_missing_still_reports_a_failure(self):
+        write_record(self.records, "app.100.csv", peak=30 * MIB)
+        code, _, _ = self.check("name,max_peak\napp,20MiB\nother,20MiB\n", "--allow-missing")
+        self.assertEqual(code, 1)
+
+    def test_allow_missing_does_not_let_a_gate_that_saw_nothing_pass(self):
+        code, _, _ = self.check("name,max_peak\napp,20MiB\nother,20MiB\n", "--allow-missing")
+        self.assertEqual(code, 3)
+        write_record(self.records, "stray.100.csv")
+        code, _, _ = self.check("name,max_peak\napp,20MiB\n", "--allow-missing")
+        self.assertEqual(code, 3)
+
+    def test_usage_errors_stay_code_2(self):
+        write_record(self.records, "app.100.csv")
+        self.assertEqual(self.check("name,peak\napp,20MiB\n")[0], 2)
+        self.assertEqual(self.check("name,max_peak\napp,+5%\n")[0], 2)
+
     def test_comments_in_budgets(self):
         write_record(self.records, "app.100.csv")
         self.assertEqual(self.check("# memory budgets\nname,max_peak\napp,20MiB\n")[0], 0)
@@ -101,11 +125,11 @@ class CheckTest(TmpDirTestCase):
     def test_budget_without_record_is_an_error_not_a_pass(self):
         write_record(self.records, "app.100.csv")
         code, out, _ = self.check("name,max_peak\napp,20MiB\nother,20MiB\n")
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 3)
         self.assertIn("NO RECORD", out)
 
     def test_empty_directory_is_an_error(self):
-        self.assertEqual(self.check("name,max_peak\napp,20MiB\n")[0], 2)
+        self.assertEqual(self.check("name,max_peak\napp,20MiB\n")[0], 3)
 
     def test_records_must_be_a_directory(self):
         for path in (self.dir / "absent", self.budgets("name,max_peak\napp,1MiB\n")):
@@ -126,7 +150,7 @@ class CheckTest(TmpDirTestCase):
     def test_unreadable_record_does_not_count(self):
         write_record(self.records, "app.100.csv", magic="# heapline 2")
         code, _, err = self.check("name,max_peak\napp,20MiB\n")
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 3)
         self.assertIn("unsupported format version", err)
 
     def test_records_without_budget_are_listed(self):
@@ -193,7 +217,7 @@ class BaselineTest(TmpDirTestCase):
     def test_name_missing_from_baseline_is_an_error(self):
         write_record(self.records, "app.2.csv")
         code, out, _ = self.check("name,max_peak\napp,+5%\n")
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 3)
         self.assertIn("NO BASELINE", out)
 
     def test_relative_budget_needs_a_baseline(self):
@@ -214,7 +238,7 @@ class BaselineTest(TmpDirTestCase):
         write_record(self.base, "app.1.csv", magic="# heapline 2")
         write_record(self.records, "app.2.csv")
         code, _, err = self.check("name,max_peak\napp,+5%\n")
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 3)
         self.assertIn("baseline", err)
 
     def test_bad_percentages(self):
