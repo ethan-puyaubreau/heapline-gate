@@ -2,8 +2,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from heapline_gate.records import COLUMNS, read_record, read_records
 from helpers import record_text, write_record
+
+from heapline_gate.records import COLUMNS, read_record, read_records
 
 
 class ReadRecordTest(unittest.TestCase):

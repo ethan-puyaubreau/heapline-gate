@@ -14,6 +14,32 @@ permissions:
   contents: read
 
 jobs:
+  quality:
+    name: Lint, types, coverage
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # mypy no longer runs on 3.8; ruff checks the 3.8 syntax (target-version).
+          python-version: '3.13'
+
+      - name: Install the tools
+        run: python -m pip install ".[dev]"
+
+      - name: ruff
+        run: ruff check .
+
+      - name: mypy
+        run: mypy
+
+      - name: Tests with coverage
+        run: |
+          coverage run -m unittest discover -s tests
+          coverage report
+
   python:
     name: Python ${{ matrix.python }}, installed
     runs-on: ${{ matrix.os }}

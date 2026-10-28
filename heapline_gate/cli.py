@@ -8,13 +8,17 @@ import subprocess
 import sys
 from fractions import Fraction
 from pathlib import Path
+from typing import List, Mapping, Optional, Set, Tuple
 
-from .records import read_records
+from .records import Record, read_records
+
+# name, max_peak bytes, percent over the baseline, max_live bytes
+Budget = Tuple[str, Optional[int], Optional[Fraction], Optional[int]]
 
 UNITS = {"B": 1, "KiB": 2**10, "MiB": 2**20, "GiB": 2**30, "TiB": 2**40}
 
 
-def parse_size(text):
+def parse_size(text: str) -> int:
     """'1048576', '512MiB' or '1.5GiB' to a number of bytes."""
     m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(B|KiB|MiB|GiB|TiB)?\s*", text)
     if not m:
@@ -23,7 +27,7 @@ def parse_size(text):
     return int(Fraction(m.group(1)) * UNITS[m.group(2) or "B"])
 
 
-def parse_peak(text):
+def parse_peak(text: str) -> Tuple[Optional[int], Optional[Fraction]]:
     """A size, or '+5%' over the baseline: returns (bytes, None) or (None, percent)."""
     m = re.fullmatch(r"\s*\+(\d+(?:\.\d+)?)%\s*", text)
     if m:
@@ -32,7 +36,7 @@ def parse_peak(text):
     return parse_size(text), None
 
 
-def read_budgets(path):
+def read_budgets(path: str) -> List[Budget]:
     """Read name,max_peak[,max_live] rows; lines starting with # are comments.
 
     Returns (name, max_peak bytes or None, percent over the baseline or None,
@@ -44,7 +48,7 @@ def read_budgets(path):
     reader = csv.DictReader(lines)
     if not reader.fieldnames or not {"name", "max_peak"} <= set(reader.fieldnames):
         raise ValueError("%s: the header must contain name and max_peak" % path)
-    budgets = []
+    budgets: List[Budget] = []
     for row in reader:
         name = row["name"].strip()
         if not name:
@@ -60,12 +64,12 @@ def read_budgets(path):
     return budgets
 
 
-def record_name(name):
+def record_name(name: str) -> "re.Pattern[str]":
     """The file names run gives the records of NAME: NAME.PID.csv."""
     return re.compile(re.escape(name) + r"\.\d+\.csv")
 
 
-def size(n):
+def size(n: int) -> str:
     """1536 to '1.5 KiB': the largest unit that keeps the number at 1 or more."""
     for unit in ("TiB", "GiB", "MiB", "KiB"):
         if n >= UNITS[unit]:
@@ -73,7 +77,7 @@ def size(n):
     return "%d B" % n
 
 
-def cmd_check(args):
+def cmd_check(args: argparse.Namespace) -> int:
     try:
         budgets = read_budgets(args.budgets)
     except (OSError, ValueError) as e:
@@ -88,20 +92,20 @@ def cmd_check(args):
             print("heapline-gate: %s is not a directory" % directory, file=sys.stderr)
             return 2
     records, errors = read_records(args.records)
-    for e in errors:
-        print("heapline-gate: skipped %s" % e, file=sys.stderr)
-    baseline = []
+    for skipped in errors:
+        print("heapline-gate: skipped %s" % skipped, file=sys.stderr)
+    baseline: List[Record] = []
     if args.baseline:
         baseline, errors = read_records(args.baseline)
-        for e in errors:
-            print("heapline-gate: skipped baseline %s" % e, file=sys.stderr)
+        for skipped in errors:
+            print("heapline-gate: skipped baseline %s" % skipped, file=sys.stderr)
 
     # Anything else in the directory is not ours.
-    def records_of(name, among):
+    def records_of(name: str, among: List[Record]) -> List[Record]:
         pattern = record_name(name)
         return [r for r in among if pattern.fullmatch(r.path.name)]
 
-    claimed = set()
+    claimed: Set[Path] = set()
     failed = missing = False
     for name, max_peak, percent, max_live in budgets:
         mine = records_of(name, records)
@@ -120,10 +124,12 @@ def cmd_check(args):
             base_peak = max(r.peak_heap_bytes for r in theirs)
             max_peak = int(base_peak * (100 + percent) / 100)
             relative_to = " (+%g%% of %s)" % (percent, size(base_peak))
+        # read_budgets gives either a size or a percentage.
+        assert max_peak is not None
         peak = max(r.peak_heap_bytes for r in mine)
         live = max(r.live_heap_at_exit_bytes for r in mine)
         # The excess, not both sizes: rounded, they may read the same.
-        over = []
+        over: List[str] = []
         if peak > max_peak:
             over.append("peak over by %s" % size(peak - max_peak))
         if max_live is not None and live > max_live:
@@ -141,7 +147,7 @@ def cmd_check(args):
     return 1 if failed else 0
 
 
-def find_lib(env):
+def find_lib(env: Mapping[str, str]) -> Tuple[Optional[str], Optional[str]]:
     """Ask the dynamic linker which libheapline.so a command run with ENV would preload.
 
     Returns (absolute path, None), or (None, why not).
@@ -156,7 +162,7 @@ def find_lib(env):
     try:
         trace = subprocess.run(
             [sys.executable, "-c", ""], env=env, stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60,
+            capture_output=True, timeout=60,
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         return None, "cannot ask the dynamic linker: %s" % e
@@ -174,7 +180,7 @@ def find_lib(env):
     return None, os.fsdecode(trace.stderr).strip() or "the dynamic linker did not report libheapline.so"
 
 
-def cmd_run(args):
+def cmd_run(args: argparse.Namespace) -> int:
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         print("heapline-gate: no command given", file=sys.stderr)
@@ -205,7 +211,7 @@ def cmd_run(args):
             file=sys.stderr,
         )
         return 2
-    name =args.name or os.path.basename(command[0])
+    name = args.name or os.path.basename(command[0])
     # heapline expands % sequences and does not create directories, so such
     # a name would never give a record that check finds.
     if not re.fullmatch(r"[\w.+-]+", name):
@@ -241,7 +247,7 @@ def cmd_run(args):
     return rc if rc >= 0 else 128 - rc
 
 
-def main(argv=None):
+def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="heapline-gate", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 

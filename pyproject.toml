@@ -27,3 +27,35 @@ heapline-gate = "heapline_gate.cli:main"
 
 [tool.setuptools]
 packages = ["heapline_gate"]
+
+[project.optional-dependencies]
+dev = ["ruff", "mypy", "coverage"]
+
+[tool.ruff]
+target-version = "py38"
+line-length = 130
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# The code formats with %, as its messages always have.
+ignore = ["UP031"]
+
+[tool.ruff.lint.per-file-ignores]
+# Long lines are the commands under test.
+"tests/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["heapline_gate"]
+disallow_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[tool.coverage.run]
+branch = true
+source = ["heapline_gate"]
+
+[tool.coverage.report]
+# 99% today; the rest is __main__.py, which the installed-command CI job runs.
+fail_under = 95
+show_missing = true
