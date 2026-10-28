@@ -6,7 +6,7 @@ refused, as that page asks of tools.
 """
 
 from pathlib import Path
-from typing import List, NamedTuple, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 
 MAGIC = "# heapline 1"
 COLUMNS = [
@@ -29,6 +29,9 @@ class Record(NamedTuple):
     path: Path
     peak_heap_bytes: int
     live_heap_at_exit_bytes: int
+    # None when the field is not a non-negative integer: the process may not
+    # have been able to read /proc/self/status.
+    vmhwm_bytes: Optional[int] = None
 
 
 def read_record(path) -> Record:
@@ -53,7 +56,13 @@ def read_record(path) -> Record:
     # A negative heap would pass any budget.
     if peak < 0 or live < 0:
         raise ValueError("peak or live heap is negative")
-    return Record(path, peak, live)
+    try:
+        rss = int(row["vmhwm_bytes"])
+    except ValueError:
+        rss = None
+    if rss is not None and rss < 0:
+        rss = None
+    return Record(path, peak, live, rss)
 
 
 def read_records(directory) -> Tuple[List[Record], List[str]]:
