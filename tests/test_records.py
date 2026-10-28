@@ -18,6 +18,14 @@ class ReadRecordTest(unittest.TestCase):
         self.assertEqual(record.peak_heap_bytes, 123456)
         self.assertEqual(record.live_heap_at_exit_bytes, 42)
 
+    def test_resident_set_peak(self):
+        self.assertEqual(read_record(write_record(self.dir, "a.1.csv", rss=77)).vmhwm_bytes, 77)
+
+    def test_unavailable_resident_set_peak_is_none(self):
+        for rss in ("", "n/a", "-1"):
+            with self.subTest(rss=rss):
+                self.assertIsNone(read_record(write_record(self.dir, "a.1.csv", rss=rss)).vmhwm_bytes)
+
     def test_refuses_other_version(self):
         path = write_record(self.dir, "a.1.csv", magic="# heapline 2")
         with self.assertRaisesRegex(ValueError, "unsupported format version"):

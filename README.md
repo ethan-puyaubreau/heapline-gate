@@ -77,13 +77,17 @@ linker finds none, `run` exits with code 2 before starting the command.
 `budgets.csv`:
 
 ```
-name,max_peak,max_live
-parser,64MiB,
-server,512MiB,1MiB
+name,max_peak,max_live,max_rss
+parser,64MiB,,
+server,512MiB,1MiB,1GiB
 ```
 
-The first line that is not a comment (`#`) is the header; `max_live` may be
-left out of it. Sizes are bytes or use `B`, `KiB`, `MiB`, `GiB`, `TiB`.
+The first line that is not a comment (`#`) is the header; `max_live` and
+`max_rss` may be left out of it. Sizes are bytes or use `B`, `KiB`, `MiB`, `GiB`, `TiB`.
+`max_rss` is optional too and limits the peak resident set size of the
+process (heapline's `vmhwm_bytes`), which counts what the heap does not see:
+mapped files, thread stacks, memory taken straight from the kernel. A record
+whose resident set peak could not be read gives `NO RSS` and exit code 2.
 `max_live` is optional and limits the heap still in use at exit; it hints at
 a leak but proves nothing, since a program may keep data until it exits on
 purpose.

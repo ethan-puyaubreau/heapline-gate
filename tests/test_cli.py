@@ -90,6 +90,49 @@ class CheckTest(TmpDirTestCase):
         code, _, _ = self.check("name,max_peak,max_live\na,20MiB,\nb,20MiB,1MiB\n")
         self.assertEqual(code, 0)
 
+    def test_rss_budget(self):
+        write_record(self.records, "app.100.csv", rss=30 * MIB)
+        code, out, _ = self.check("name,max_peak,max_rss\napp,20MiB,64MiB\n")
+        self.assertEqual(code, 0, out)
+        code, out, _ = self.check("name,max_peak,max_rss\napp,20MiB,16MiB\n")
+        self.assertEqual(code, 1)
+        self.assertIn("resident set over by 14.0 MiB", out)
+
+    def test_rss_budget_is_exact_boundary(self):
+        write_record(self.records, "app.100.csv", rss=16 * MIB)
+        self.assertEqual(self.check("name,max_peak,max_rss\napp,20MiB,16MiB\n")[0], 0)
+
+    def test_highest_rss_counts(self):
+        write_record(self.records, "app.100.csv", rss=1 * MIB)
+        write_record(self.records, "app.101.csv", rss=30 * MIB)
+        self.assertEqual(self.check("name,max_peak,max_rss\napp,20MiB,16MiB\n")[0], 1)
+
+    def test_rss_budget_is_optional_per_row(self):
+        write_record(self.records, "a.100.csv", rss=999 * MIB)
+        write_record(self.records, "b.101.csv", rss=999 * MIB)
+        code, _, _ = self.check("name,max_peak,max_live,max_rss\na,20MiB,,\nb,20MiB,,1GiB\n")
+        self.assertEqual(code, 0)
+
+    def test_all_limits_are_reported_together(self):
+        write_record(self.records, "app.100.csv", peak=30 * MIB, live=2 * MIB, rss=40 * MIB)
+        code, out, _ = self.check("name,max_peak,max_live,max_rss\napp,20MiB,1MiB,32MiB\n")
+        self.assertEqual(code, 1)
+        self.assertIn("peak over by 10.0 MiB; live at exit over by 1.0 MiB; resident set over by 8.0 MiB", out)
+
+    def test_record_without_rss_cannot_meet_an_rss_budget(self):
+        write_record(self.records, "app.100.csv", rss="")
+        code, out, _ = self.check("name,max_peak,max_rss\napp,20MiB,16MiB\n")
+        self.assertEqual(code, 2)
+        self.assertIn("NO RSS", out)
+        # No rss budget: the missing figure does not matter.
+        self.assertEqual(self.check("name,max_peak\napp,20MiB\n")[0], 0)
+
+    def test_bad_rss_budget(self):
+        write_record(self.records, "app.100.csv")
+        code, _, err = self.check("name,max_peak,max_rss\napp,20MiB,lots\n")
+        self.assertEqual(code, 2)
+        self.assertIn("bad size", err)
+
     def test_comments_in_budgets(self):
         write_record(self.records, "app.100.csv")
         self.assertEqual(self.check("# memory budgets\nname,max_peak\napp,20MiB\n")[0], 0)

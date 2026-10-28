@@ -33,10 +33,10 @@ def parse_peak(text):
 
 
 def read_budgets(path):
-    """Read name,max_peak[,max_live] rows; lines starting with # are comments.
+    """Read name,max_peak[,max_live][,max_rss] rows; lines starting with # are comments.
 
     Returns (name, max_peak bytes or None, percent over the baseline or None,
-    max_live bytes or None) tuples.
+    max_live bytes or None, max_rss bytes or None) tuples.
     """
     # utf-8-sig: spreadsheets on Windows save a byte order mark.
     with open(path, newline="", encoding="utf-8-sig") as f:
@@ -53,7 +53,8 @@ def read_budgets(path):
             raise ValueError("%s: %s has two budgets" % (path, name))
         max_peak, percent = parse_peak(row["max_peak"] or "")
         live = (row.get("max_live") or "").strip()
-        budgets.append((name, max_peak, percent, parse_size(live) if live else None))
+        rss = (row.get("max_rss") or "").strip()
+        budgets.append((name, max_peak, percent, parse_size(live) if live else None, parse_size(rss) if rss else None))
     # With no budget, every record would go unchecked and the gate pass.
     if not budgets:
         raise ValueError("%s: no budget" % path)
@@ -79,7 +80,7 @@ def cmd_check(args):
     except (OSError, ValueError) as e:
         print("heapline-gate: %s" % e, file=sys.stderr)
         return 2
-    relative = [name for name, _, percent, _ in budgets if percent is not None]
+    relative = [name for name, _, percent, _, _ in budgets if percent is not None]
     if relative and not args.baseline:
         print("heapline-gate: relative budgets need --baseline: %s" % ", ".join(relative), file=sys.stderr)
         return 2
@@ -103,7 +104,7 @@ def cmd_check(args):
 
     claimed = set()
     failed = missing = False
-    for name, max_peak, percent, max_live in budgets:
+    for name, max_peak, percent, max_live, max_rss in budgets:
         mine = records_of(name, records)
         claimed.update(r.path for r in mine)
         if not mine:
@@ -122,12 +123,22 @@ def cmd_check(args):
             relative_to = " (+%g%% of %s)" % (percent, size(base_peak))
         peak = max(r.peak_heap_bytes for r in mine)
         live = max(r.live_heap_at_exit_bytes for r in mine)
+        rss = None
+        if max_rss is not None:
+            # A record without the figure must not stand in for one under the budget.
+            if any(r.vmhwm_bytes is None for r in mine):
+                print("%-30s NO RSS" % name)
+                missing = True
+                continue
+            rss = max(r.vmhwm_bytes for r in mine)
         # The excess, not both sizes: rounded, they may read the same.
         over = []
         if peak > max_peak:
             over.append("peak over by %s" % size(peak - max_peak))
         if max_live is not None and live > max_live:
             over.append("live at exit over by %s" % size(live - max_live))
+        if rss is not None and rss > max_rss:
+            over.append("resident set over by %s" % size(rss - max_rss))
         verdict = "FAIL: " + "; ".join(over) if over else "ok"
         print("%-30s peak %-10s budget %-10s %s%s" % (name, size(peak), size(max_peak), verdict, relative_to))
         failed = failed or bool(over)
@@ -255,7 +266,7 @@ def main(argv=None):
     run.set_defaults(func=cmd_run)
 
     check = sub.add_parser("check", help="compare records with a budget file")
-    check.add_argument("--budgets", required=True, help="CSV: name,max_peak[,max_live]")
+    check.add_argument("--budgets", required=True, help="CSV: name,max_peak[,max_live][,max_rss]")
     check.add_argument("--records", required=True, help="directory written by run")
     check.add_argument("--baseline", help="directory of records that +N%% budgets are relative to")
     check.set_defaults(func=cmd_check)
