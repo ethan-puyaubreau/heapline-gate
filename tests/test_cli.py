@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import subprocess
@@ -147,6 +148,58 @@ class CheckTest(TmpDirTestCase):
         ):
             with self.subTest(text=text):
                 self.assertEqual(self.check(text)[0], 2)
+
+
+class FormatTest(TmpDirTestCase):
+    def check(self, budgets_text, fmt, *extra):
+        return run_main(
+            "check", "--budgets", self.budgets(budgets_text), "--records", str(self.records),
+            "--format", fmt, *extra,
+        )
+
+    def test_text_is_the_default(self):
+        write_record(self.records, "app.100.csv", peak=10 * MIB)
+        budgets = self.budgets("name,max_peak\napp,20MiB\n")
+        default = run_main("check", "--budgets", budgets, "--records", str(self.records))
+        self.assertEqual(default, self.check("name,max_peak\napp,20MiB\n", "text"))
+        self.assertIn("peak 10.0 MiB", default[1])
+
+    def test_json(self):
+        write_record(self.records, "app.100.csv", peak=30 * MIB, live=2 * MIB)
+        write_record(self.records, "stray.101.csv")
+        code, out, _ = self.check("name,max_peak,max_live\napp,20MiB,1MiB\n", "json")
+        self.assertEqual(code, 1)
+        report = json.loads(out)
+        self.assertEqual(report["exit_code"], 1)
+        self.assertEqual(report["records_without_budget"], ["stray.101.csv"])
+        (budget,) = report["budgets"]
+        self.assertEqual(budget["name"], "app")
+        self.assertEqual(budget["status"], "fail")
+        self.assertEqual(budget["peak"], 30 * MIB)
+        self.assertEqual(budget["budget"], 20 * MIB)
+        self.assertEqual(
+            budget["over"], [{"what": "peak", "bytes": 10 * MIB}, {"what": "live at exit", "bytes": MIB}]
+        )
+
+    def test_json_keeps_the_exit_code_of_an_error(self):
+        code, out, _ = self.check("name,max_peak\napp,20MiB\n", "json")
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(out)["budgets"][0]["status"], "no_record")
+
+    def test_markdown(self):
+        write_record(self.records, "app.100.csv", peak=10 * MIB)
+        write_record(self.records, "big.101.csv", peak=30 * MIB)
+        code, out, _ = self.check("name,max_peak\napp,20MiB\nbig,20MiB\nmissing,1MiB\n", "markdown")
+        self.assertEqual(code, 2)
+        lines = out.splitlines()
+        self.assertEqual(lines[0], "| Name | Peak | Budget | Result |")
+        self.assertIn("| app | 10.0 MiB | 20.0 MiB | :white_check_mark: ok |", lines)
+        self.assertIn("| big | 30.0 MiB | 20.0 MiB | :x: peak over by 10.0 MiB |", lines)
+        self.assertIn("| missing | | | NO RECORD |", lines)
+
+    def test_unknown_format(self):
+        with self.assertRaises(SystemExit):
+            self.check("name,max_peak\napp,20MiB\n", "xml")
 
 
 class BaselineTest(TmpDirTestCase):

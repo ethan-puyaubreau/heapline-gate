@@ -105,6 +105,18 @@ of all the records of a name. `check` reads only files named that way.
 records of that name: an old record would stand in for a run that writes
 none, and let it pass. To measure again, remove the directory or use another.
 
+`--format json` prints the same results as one JSON object (one entry per
+budget with its status, sizes and excess in bytes, the exit code, and the
+records without a budget), for scripts. `--format markdown` prints a table;
+in GitHub Actions, append it to the job summary:
+
+```
+heapline-gate check --budgets budgets.csv --records records --format markdown >> "$GITHUB_STEP_SUMMARY"
+```
+
+Messages about skipped records stay on stderr in every format, and the exit
+codes do not depend on the format.
+
 | Exit code | Meaning |
 |---|---|
 | 0 | every budget is respected |
