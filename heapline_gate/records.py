@@ -1,15 +1,16 @@
-"""Reader for heapline records, format version 1.
+"""Reader for heapline records, format versions 1 and 2.
 
 The format is described in heapline's docs/format.md: a comment line naming
-the version, a header line and one line of values. Any other version is
-refused, as that page asks of tools.
+the version, a header line and one line of values. Version 2 adds the
+complete column. Any other version is refused, as that page asks of tools.
 """
 
 from pathlib import Path
 from typing import List, NamedTuple, Tuple
 
-MAGIC = "# heapline 1"
-COLUMNS = [
+MAGIC = "# heapline 2"
+MAGIC_V1 = "# heapline 1"
+COLUMNS_V1 = [
     "rank",
     "host",
     "pid",
@@ -23,6 +24,7 @@ COLUMNS = [
     "vmhwm_bytes",
     "vmrss_at_exit_bytes",
 ]
+COLUMNS = COLUMNS_V1 + ["complete"]
 
 
 class Record(NamedTuple):
@@ -37,14 +39,24 @@ def read_record(path) -> Record:
     lines = path.read_text(encoding="utf-8").splitlines()
     if not lines or not lines[0].startswith("# heapline"):
         raise ValueError("not a heapline record")
-    if lines[0].strip() != MAGIC:
-        raise ValueError("unsupported format version: %r" % lines[0].strip())
-    if len(lines) < 3 or lines[1].strip().split(",") != COLUMNS:
+    magic = lines[0].strip()
+    if magic not in (MAGIC, MAGIC_V1):
+        raise ValueError("unsupported format version: %r" % magic)
+    columns = COLUMNS if magic == MAGIC else COLUMNS_V1
+    if len(lines) < 3 or lines[1].strip().split(",") != columns:
         raise ValueError("unexpected columns or missing values line")
     values = lines[2].strip().split(",")
-    if len(values) != len(COLUMNS):
-        raise ValueError("values line does not have %d fields" % len(COLUMNS))
-    row = dict(zip(COLUMNS, values))
+    if len(values) != len(columns):
+        raise ValueError("values line does not have %d fields" % len(columns))
+    row = dict(zip(columns, values))
+    # A snapshot holds the peak of a process that did not exit, killed by the
+    # OOM killer for instance: the run did not end, and its peak is a lower
+    # bound, which must not pass a budget.
+    complete = row.get("complete", "1")
+    if complete not in ("0", "1"):
+        raise ValueError("complete is neither 0 nor 1")
+    if complete == "0":
+        raise ValueError("snapshot of a process that did not exit (killed?)")
     try:
         peak = int(row["peak_heap_bytes"])
         live = int(row["live_heap_at_exit_bytes"])

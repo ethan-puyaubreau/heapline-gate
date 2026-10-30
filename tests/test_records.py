@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from heapline_gate.records import COLUMNS, read_record, read_records
+from heapline_gate.records import COLUMNS, COLUMNS_V1, MAGIC_V1, read_record, read_records
 from helpers import record_text, write_record
 
 
@@ -19,8 +19,27 @@ class ReadRecordTest(unittest.TestCase):
         self.assertEqual(record.live_heap_at_exit_bytes, 42)
 
     def test_refuses_other_version(self):
-        path = write_record(self.dir, "a.1.csv", magic="# heapline 2")
+        path = write_record(self.dir, "a.1.csv", magic="# heapline 3")
         with self.assertRaisesRegex(ValueError, "unsupported format version"):
+            read_record(path)
+
+    def test_reads_version_1(self):
+        values = ["0", "h", "1", "", "1.0", "5", "4", "2048", "0.5", "16", "1", "1"]
+        path = write_record(self.dir, "a.1.csv", magic=MAGIC_V1, columns=COLUMNS_V1, values=values)
+        record = read_record(path)
+        self.assertEqual(record.peak_heap_bytes, 2048)
+        self.assertEqual(record.live_heap_at_exit_bytes, 16)
+
+    def test_refuses_snapshot(self):
+        values = ["0", "h", "1", "", "1.0", "5", "4", "2048", "0.5", "16", "1", "1", "0"]
+        path = write_record(self.dir, "a.1.csv", values=values)
+        with self.assertRaisesRegex(ValueError, "did not exit"):
+            read_record(path)
+
+    def test_refuses_bad_complete(self):
+        values = ["0", "h", "1", "", "1.0", "5", "4", "2048", "0.5", "16", "1", "1", "yes"]
+        path = write_record(self.dir, "a.1.csv", values=values)
+        with self.assertRaisesRegex(ValueError, "neither 0 nor 1"):
             read_record(path)
 
     def test_refuses_foreign_csv(self):
@@ -54,7 +73,7 @@ class ReadRecordTest(unittest.TestCase):
             read_record(path)
 
     def test_refuses_non_integer_peak(self):
-        values = ["0", "h", "1", "", "1.0", "5", "4", "lots", "0.5", "10", "1", "1"]
+        values = ["0", "h", "1", "", "1.0", "5", "4", "lots", "0.5", "10", "1", "1", "1"]
         path = write_record(self.dir, "a.1.csv", values=values)
         with self.assertRaisesRegex(ValueError, "not an integer"):
             read_record(path)

@@ -3,9 +3,11 @@
 Fail a build when the heap peak of a program, measured by
 [heapline](https://github.com/ethan-puyaubreau/heapline), exceeds a budget.
 
-heapline-gate only reads the records heapline writes (format version 1) and
-has no dependency beyond the Python 3.8+ standard library. Records of any other
-version are refused. It does not change heapline.
+heapline-gate only reads the records heapline writes (format versions 1 and
+2) and has no dependency beyond the Python 3.8+ standard library. Records of
+any other version are refused, and so is the snapshot that heapline 0.6 leaves
+for a process killed before its exit, whose peak is only a lower bound. It
+does not change heapline.
 
 ## Install
 
@@ -112,7 +114,8 @@ none, and let it pass. To measure again, remove the directory or use another.
 | 2 | nothing could be checked: no valid record, a budget without a record or without a baseline, or a bad budget file |
 
 A gate that saw nothing never passes. Records that are skipped (unknown
-version, truncated, a negative heap) are named on stderr, as are records
+version, truncated, a negative heap, a snapshot of a killed process) are named
+on stderr, as are records
 without a budget.
 
 `run` returns the exit code of the command, 128 + N when a signal N ended

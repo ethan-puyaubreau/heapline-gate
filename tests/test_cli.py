@@ -124,7 +124,7 @@ class CheckTest(TmpDirTestCase):
         self.assertIn("is not a directory", err)
 
     def test_unreadable_record_does_not_count(self):
-        write_record(self.records, "app.100.csv", magic="# heapline 2")
+        write_record(self.records, "app.100.csv", magic="# heapline 3")
         code, _, err = self.check("name,max_peak\napp,20MiB\n")
         self.assertEqual(code, 2)
         self.assertIn("unsupported format version", err)
@@ -211,7 +211,7 @@ class BaselineTest(TmpDirTestCase):
         self.assertRegex(out, r"a .* ok")
 
     def test_unreadable_baseline_record_is_reported(self):
-        write_record(self.base, "app.1.csv", magic="# heapline 2")
+        write_record(self.base, "app.1.csv", magic="# heapline 3")
         write_record(self.records, "app.2.csv")
         code, _, err = self.check("name,max_peak\napp,+5%\n")
         self.assertEqual(code, 2)
